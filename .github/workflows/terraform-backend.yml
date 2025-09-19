@@ -12,8 +12,8 @@ env:
   TF_VERSION: 1.6.0
   WORKING_DIRECTORY: terraform/backend
   TF_VAR_aws_region: ${{ secrets.AWS_REGION }}
-  TF_VAR_backend_bucket: ${{ secrets.BACKEND_BUCKET }}
-  TF_VAR_backend_bucket_key: ${{ secrets.BACKEND_BUCKET_KEY }}
+  TF_VAR_backend_bucket: ${{ secrets.TF_STATE_BUCKET }}
+  TF_VAR_backend_bucket_key: ${{ secrets.TF_STATE_KEY }}
 
 jobs:
   validate:
@@ -70,7 +70,7 @@ jobs:
         with:
           aws-region: ${{ secrets.AWS_REGION }}
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}3
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
       - name: Terraform Init
         working-directory: ${{ env.WORKING_DIRECTORY }}
