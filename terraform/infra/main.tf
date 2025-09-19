@@ -1327,51 +1327,6 @@ resource "kubernetes_config_map" "aws_auth" {
   depends_on = [aws_eks_node_group.main]
 }
 
-# Developer ClusterRole for read-only access
-resource "kubernetes_cluster_role" "developer" {
-  metadata {
-    name = "tinyuka-developer-role"
-  }
-
-  rule {
-    api_groups = [""]
-    resources  = ["*"]
-    verbs      = ["get", "list", "watch"]
-  }
-
-  rule {
-    api_groups = ["apps", "extensions"]
-    resources  = ["*"]
-    verbs      = ["get", "list", "watch"]
-  }
-
-  rule {
-    api_groups = ["metrics.k8s.io"]
-    resources  = ["*"]
-    verbs      = ["get", "list"]
-  }
-}
-
-# Developer ClusterRoleBinding
-resource "kubernetes_cluster_role_binding" "developer" {
-  metadata {
-    name = "tinyuka-developer-binding"
-  }
-
-  role_ref {
-    api_group = "rbac.authorization.k8s.io"
-    kind      = "ClusterRole"
-    name      = kubernetes_cluster_role.developer.metadata[0].name
-  }
-
-  subject {
-    kind     = "Group"
-    name     = "tinyuka:developers"
-    api_group = "rbac.authorization.k8s.io"
-  }
-
-  depends_on = [aws_eks_node_group.main]
-}
 
 # Outputs
 output "vpc_id" {
