@@ -10,10 +10,17 @@ variable "app_namespace" {
   default     = "app"
 }
 
+variable "cluster_name" {
+  description = "Kubernetes cluster name"
+  type        = string
+  default     = "tinyuka-cluster"
+}
+
 locals {
-  rds_db_user = "tinyuka"
-  rds_db_name = "tinyuka_app"
-  app_name    = "tinyuka-cluster"
+  rds_db_user   = "tinyuka"
+  rds_db_name   = "tinyuka_app"
+  app_name      = "tinyuka-cluster"
+  rabbitmq_user = "tinyka"
 }
 
 terraform {
@@ -80,9 +87,8 @@ data "aws_caller_identity" "current" {}
 
 # Random Password Generation
 resource "random_password" "postgres_password" {
-  length           = 16
-  special          = true
-  override_special = "/@\"'\\" # Override to avoid issues with certain special characters
+  length  = 16
+  special = false
 }
 
 resource "random_password" "redis_password" {
@@ -91,14 +97,13 @@ resource "random_password" "redis_password" {
 }
 
 resource "random_password" "mysql_password" {
-  length           = 16
-  special          = true
-  override_special = "/@\"'\\" # Override to avoid issues with certain special characters
+  length  = 16
+  special = false
 }
 
 resource "random_password" "rabbitmq_password" {
   length  = 16
-  special = true
+  special = false
 }
 
 # VPC Configuration
@@ -320,7 +325,7 @@ resource "aws_iam_openid_connect_provider" "eks" {
 
 # EKS Cluster
 resource "aws_eks_cluster" "main" {
-  name     = local.app_name
+  name     = var.cluster_name
   role_arn = aws_iam_role.eks_cluster.arn
   version  = "1.33"
 
@@ -998,7 +1003,7 @@ resource "kubernetes_config_map" "storage_config" {
 
     in_cluster_rabbitmq_port            = "5672"
     in_cluster_rabbitmq_management_port = "15672"
-    in_cluster_rabbitmq_username        = "rabbitmq_user"
+    in_cluster_rabbitmq_username        = local.rabbitmq_user
     in_cluster_rabbitmq_host            = "rabbitmq.${var.app_namespace}.svc.cluster.local"
   }
 
@@ -1030,9 +1035,9 @@ resource "kubernetes_secret" "storage_credentials" {
     in_cluster_postgres_password = random_password.postgres_password.result
     in_cluster_postgres_url      = "postgresql://${local.rds_db_user}:${random_password.postgres_password.result}@postgres.${var.app_namespace}.svc.cluster.local:5432/${local.rds_db_name}"
     in_cluster_mysql_password    = random_password.mysql_password.result
-    in_cluster_mysql_url         = "mysql://mysql_user:${random_password.mysql_password.result}@mysql.${var.app_namespace}.svc.cluster.local:3306/${local.rds_db_name}"
+    in_cluster_mysql_url         = "mysql://${local.rds_db_user}:${random_password.mysql_password.result}@mysql.${var.app_namespace}.svc.cluster.local:3306/${local.rds_db_name}"
     in_cluster_rabbitmq_password = random_password.rabbitmq_password.result
-    in_cluster_rabbitmq_url      = "amqp://rabbitmq_user:${random_password.rabbitmq_password.result}@rabbitmq.${var.app_namespace}.svc.cluster.local:5672"
+    in_cluster_rabbitmq_url      = "amqp://${local.rabbitmq_user}:${random_password.rabbitmq_password.result}@rabbitmq.${var.app_namespace}.svc.cluster.local:5672"
 
     # AWS DynamoDB connection info
     aws_dynamodb_endpoint = "https://dynamodb.${var.aws_region}.amazonaws.com"

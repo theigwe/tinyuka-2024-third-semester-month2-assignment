@@ -16,6 +16,8 @@ env:
   TF_VAR_aws_region: ${{ secrets.AWS_REGION }}
   TF_VAR_backend_bucket: ${{ secrets.TF_STATE_BUCKET }}
   TF_VAR_backend_bucket_key: ${{ secrets.TF_STATE_KEY }}
+  TF_VAR_cluster_name: ${{ secrets.TF_CLUSTER_NAME }}
+  TF_VAR_app_namespace: ${{ secrets.KUBE_APP_NAMESPACE }}
 
 jobs:
   validate:
@@ -96,6 +98,8 @@ jobs:
     runs-on: ubuntu-latest
     environment: dev
     if: github.ref == 'refs/heads/main' && (github.event.pull_request.merged == true || github.event_name == 'push')
+    outputs:
+      applied: ${{ steps.exec-apply.outputs.applied }}
 
     steps:
       - name: Checkout code
@@ -126,5 +130,45 @@ jobs:
         run: terraform plan -no-color
 
       - name: Terraform Apply
+        id: exec-apply
         working-directory: ${{ env.WORKING_DIRECTORY }}
-        run: terraform apply -auto-approve
+        run: |
+          terraform apply -auto-approve
+          echo "applied=true" >> $GITHUB_OUTPUT
+  in-cluster-database-states:
+    needs: apply
+    environment: dev
+    name: Create In-Cluster Database States
+    runs-on: ubuntu-latest
+    if: needs.apply.outputs.applied == 'true'
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ secrets.AWS_REGION }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'v1.28.0'
+      - name: Update kubeconfig
+        run: |
+          aws eks update-kubeconfig --region ${{ secrets.AWS_REGION }} --name ${{ secrets.TF_CLUSTER_NAME }}
+      - name: Verify cluster connection
+        run: |
+          kubectl cluster-info
+          kubectl get nodes
+      - name: Deploy Kubernetes manifests
+        run: |
+          kubectl apply -f database/ --namespace=${{ secrets.KUBE_APP_NAMESPACE }}
+      - name: Wait for deployments to be ready
+        run: |
+          echo "Waiting for StatefulSets to be ready..."
+          kubectl wait --for=condition=ready pod -l app=postgres --timeout=300s --namespace=${{ secrets.KUBE_APP_NAMESPACE }} || true
+          kubectl wait --for=condition=ready pod -l app=redis --timeout=300s --namespace=${{ secrets.KUBE_APP_NAMESPACE }} || true
+          kubectl wait --for=condition=ready pod -l app=mysql --timeout=300s --namespace=${{ secrets.KUBE_APP_NAMESPACE }} || true
+          kubectl wait --for=condition=ready pod -l app=dynamodb --timeout=300s --namespace=${{ secrets.KUBE_APP_NAMESPACE }} || true
+          kubectl wait --for=condition=ready pod -l app=rabbitmq --timeout=300s --namespace=${{ secrets.KUBE_APP_NAMESPACE }} || true
+          
+          
