@@ -4,6 +4,12 @@ variable "aws_region" {
   default     = "eu-west-1"
 }
 
+variable "app_namespace" {
+  description = "Kubernetes namespace for the application"
+  type        = string
+  default     = "app"
+}
+
 locals {
   rds_db_user = "tinyuka"
   rds_db_name = "tinyuka_app"
@@ -452,510 +458,510 @@ resource "aws_dynamodb_table" "main" {
 }
 
 # Kubernetes Resources
-resource "kubernetes_namespace" "storage" {
-  metadata {
-    name = "storage"
-  }
-
-  depends_on = [aws_eks_node_group.main]
-}
+# resource "kubernetes_namespace" "storage" {
+#   metadata {
+#     name = "storage"
+#   }
+#
+#   depends_on = [aws_eks_node_group.main]
+# }
 
 # In-cluster PostgreSQL StatefulSet
-resource "kubernetes_stateful_set" "postgres" {
-  metadata {
-    name      = "postgres"
-    namespace = kubernetes_namespace.storage.metadata[0].name
-  }
-
-  spec {
-    service_name = "postgres"
-    replicas     = 1
-
-    selector {
-      match_labels = {
-        app = "postgres"
-      }
-    }
-
-    template {
-      metadata {
-        labels = {
-          app = "postgres"
-        }
-      }
-
-      spec {
-        container {
-          name  = "postgres"
-          image = "postgres:15"
-
-          env {
-            name  = "POSTGRES_DB"
-            value = local.rds_db_name
-          }
-
-          env {
-            name  = "POSTGRES_USER"
-            value = local.rds_db_user
-          }
-
-          env {
-            name  = "POSTGRES_PASSWORD"
-            value = random_password.postgres_password.result
-          }
-
-          port {
-            container_port = 5432
-          }
-
-          volume_mount {
-            name       = "postgres-storage"
-            mount_path = "/var/lib/postgresql/data"
-          }
-        }
-      }
-    }
-
-    volume_claim_template {
-      metadata {
-        name = "postgres-storage"
-      }
-
-      spec {
-        access_modes = ["ReadWriteOnce"]
-        resources {
-          requests = {
-            storage = "10Gi"
-          }
-        }
-      }
-    }
-  }
-
-  depends_on = [kubernetes_namespace.storage]
-}
-
-resource "kubernetes_service" "postgres" {
-  metadata {
-    name      = "postgres"
-    namespace = kubernetes_namespace.storage.metadata[0].name
-  }
-
-  spec {
-    selector = {
-      app = "postgres"
-    }
-
-    port {
-      port        = 5432
-      target_port = 5432
-    }
-
-    type = "ClusterIP"
-  }
-
-  depends_on = [kubernetes_stateful_set.postgres]
-}
+# resource "kubernetes_stateful_set" "postgres" {
+#   metadata {
+#     name      = "postgres"
+#     namespace = kubernetes_namespace.storage.metadata[0].name
+#   }
+#
+#   spec {
+#     service_name = "postgres"
+#     replicas     = 1
+#
+#     selector {
+#       match_labels = {
+#         app = "postgres"
+#       }
+#     }
+#
+#     template {
+#       metadata {
+#         labels = {
+#           app = "postgres"
+#         }
+#       }
+#
+#       spec {
+#         container {
+#           name  = "postgres"
+#           image = "postgres:15"
+#
+#           env {
+#             name  = "POSTGRES_DB"
+#             value = local.rds_db_name
+#           }
+#
+#           env {
+#             name  = "POSTGRES_USER"
+#             value = local.rds_db_user
+#           }
+#
+#           env {
+#             name  = "POSTGRES_PASSWORD"
+#             value = random_password.postgres_password.result
+#           }
+#
+#           port {
+#             container_port = 5432
+#           }
+#
+#           volume_mount {
+#             name       = "postgres-storage"
+#             mount_path = "/var/lib/postgresql/data"
+#           }
+#         }
+#       }
+#     }
+#
+#     volume_claim_template {
+#       metadata {
+#         name = "postgres-storage"
+#       }
+#
+#       spec {
+#         access_modes = ["ReadWriteOnce"]
+#         resources {
+#           requests = {
+#             storage = "10Gi"
+#           }
+#         }
+#       }
+#     }
+#   }
+#
+#   depends_on = [kubernetes_namespace.storage]
+# }
+#
+# resource "kubernetes_service" "postgres" {
+#   metadata {
+#     name      = "postgres"
+#     namespace = kubernetes_namespace.storage.metadata[0].name
+#   }
+#
+#   spec {
+#     selector = {
+#       app = "postgres"
+#     }
+#
+#     port {
+#       port        = 5432
+#       target_port = 5432
+#     }
+#
+#     type = "ClusterIP"
+#   }
+#
+#   depends_on = [kubernetes_stateful_set.postgres]
+# }
 
 # In-cluster Redis StatefulSet
-resource "kubernetes_stateful_set" "redis" {
-  metadata {
-    name      = "redis"
-    namespace = kubernetes_namespace.storage.metadata[0].name
-  }
-
-  spec {
-    service_name = "redis"
-    replicas     = 1
-
-    selector {
-      match_labels = {
-        app = "redis"
-      }
-    }
-
-    template {
-      metadata {
-        labels = {
-          app = "redis"
-        }
-      }
-
-      spec {
-        container {
-          name  = "redis"
-          image = "redis:7-alpine"
-
-          port {
-            container_port = 6379
-          }
-
-          volume_mount {
-            name       = "redis-storage"
-            mount_path = "/data"
-          }
-        }
-      }
-    }
-
-    volume_claim_template {
-      metadata {
-        name = "redis-storage"
-      }
-
-      spec {
-        access_modes = ["ReadWriteOnce"]
-        resources {
-          requests = {
-            storage = "5Gi"
-          }
-        }
-      }
-    }
-  }
-
-  depends_on = [kubernetes_namespace.storage]
-}
-
-resource "kubernetes_service" "redis" {
-  metadata {
-    name      = "redis"
-    namespace = kubernetes_namespace.storage.metadata[0].name
-  }
-
-  spec {
-    selector = {
-      app = "redis"
-    }
-
-    port {
-      port        = 6379
-      target_port = 6379
-    }
-
-    type = "ClusterIP"
-  }
-
-  depends_on = [kubernetes_stateful_set.redis]
-}
+# resource "kubernetes_stateful_set" "redis" {
+#   metadata {
+#     name      = "redis"
+#     namespace = kubernetes_namespace.storage.metadata[0].name
+#   }
+#
+#   spec {
+#     service_name = "redis"
+#     replicas     = 1
+#
+#     selector {
+#       match_labels = {
+#         app = "redis"
+#       }
+#     }
+#
+#     template {
+#       metadata {
+#         labels = {
+#           app = "redis"
+#         }
+#       }
+#
+#       spec {
+#         container {
+#           name  = "redis"
+#           image = "redis:7-alpine"
+#
+#           port {
+#             container_port = 6379
+#           }
+#
+#           volume_mount {
+#             name       = "redis-storage"
+#             mount_path = "/data"
+#           }
+#         }
+#       }
+#     }
+#
+#     volume_claim_template {
+#       metadata {
+#         name = "redis-storage"
+#       }
+#
+#       spec {
+#         access_modes = ["ReadWriteOnce"]
+#         resources {
+#           requests = {
+#             storage = "5Gi"
+#           }
+#         }
+#       }
+#     }
+#   }
+#
+#   depends_on = [kubernetes_namespace.storage]
+# }
+#
+# resource "kubernetes_service" "redis" {
+#   metadata {
+#     name      = "redis"
+#     namespace = kubernetes_namespace.storage.metadata[0].name
+#   }
+#
+#   spec {
+#     selector = {
+#       app = "redis"
+#     }
+#
+#     port {
+#       port        = 6379
+#       target_port = 6379
+#     }
+#
+#     type = "ClusterIP"
+#   }
+#
+#   depends_on = [kubernetes_stateful_set.redis]
+# }
 
 # In-cluster MySQL StatefulSet
-resource "kubernetes_stateful_set" "mysql" {
-  metadata {
-    name      = "mysql"
-    namespace = kubernetes_namespace.storage.metadata[0].name
-  }
-
-  spec {
-    service_name = "mysql"
-    replicas     = 1
-
-    selector {
-      match_labels = {
-        app = "mysql"
-      }
-    }
-
-    template {
-      metadata {
-        labels = {
-          app = "mysql"
-        }
-      }
-
-      spec {
-        container {
-          name  = "mysql"
-          image = "mysql:8.0"
-
-          env {
-            name  = "MYSQL_ROOT_PASSWORD"
-            value = random_password.mysql_password.result
-          }
-
-          env {
-            name  = "MYSQL_DATABASE"
-            value = local.rds_db_name
-          }
-
-          env {
-            name  = "MYSQL_USER"
-            value = local.rds_db_user
-          }
-
-          env {
-            name  = "MYSQL_PASSWORD"
-            value = random_password.mysql_password.result
-          }
-
-          port {
-            container_port = 3306
-          }
-
-          volume_mount {
-            name       = "mysql-storage"
-            mount_path = "/var/lib/mysql"
-          }
-        }
-      }
-    }
-
-    volume_claim_template {
-      metadata {
-        name = "mysql-storage"
-      }
-
-      spec {
-        access_modes = ["ReadWriteOnce"]
-        resources {
-          requests = {
-            storage = "10Gi"
-          }
-        }
-      }
-    }
-  }
-
-  depends_on = [kubernetes_namespace.storage]
-}
-
-resource "kubernetes_service" "mysql" {
-  metadata {
-    name      = "mysql"
-    namespace = kubernetes_namespace.storage.metadata[0].name
-  }
-
-  spec {
-    selector = {
-      app = "mysql"
-    }
-
-    port {
-      port        = 3306
-      target_port = 3306
-    }
-
-    type = "ClusterIP"
-  }
-
-  depends_on = [kubernetes_stateful_set.mysql]
-}
+# resource "kubernetes_stateful_set" "mysql" {
+#   metadata {
+#     name      = "mysql"
+#     namespace = kubernetes_namespace.storage.metadata[0].name
+#   }
+#
+#   spec {
+#     service_name = "mysql"
+#     replicas     = 1
+#
+#     selector {
+#       match_labels = {
+#         app = "mysql"
+#       }
+#     }
+#
+#     template {
+#       metadata {
+#         labels = {
+#           app = "mysql"
+#         }
+#       }
+#
+#       spec {
+#         container {
+#           name  = "mysql"
+#           image = "mysql:8.0"
+#
+#           env {
+#             name  = "MYSQL_ROOT_PASSWORD"
+#             value = random_password.mysql_password.result
+#           }
+#
+#           env {
+#             name  = "MYSQL_DATABASE"
+#             value = local.rds_db_name
+#           }
+#
+#           env {
+#             name  = "MYSQL_USER"
+#             value = local.rds_db_user
+#           }
+#
+#           env {
+#             name  = "MYSQL_PASSWORD"
+#             value = random_password.mysql_password.result
+#           }
+#
+#           port {
+#             container_port = 3306
+#           }
+#
+#           volume_mount {
+#             name       = "mysql-storage"
+#             mount_path = "/var/lib/mysql"
+#           }
+#         }
+#       }
+#     }
+#
+#     volume_claim_template {
+#       metadata {
+#         name = "mysql-storage"
+#       }
+#
+#       spec {
+#         access_modes = ["ReadWriteOnce"]
+#         resources {
+#           requests = {
+#             storage = "10Gi"
+#           }
+#         }
+#       }
+#     }
+#   }
+#
+#   depends_on = [kubernetes_namespace.storage]
+# }
+#
+# resource "kubernetes_service" "mysql" {
+#   metadata {
+#     name      = "mysql"
+#     namespace = kubernetes_namespace.storage.metadata[0].name
+#   }
+#
+#   spec {
+#     selector = {
+#       app = "mysql"
+#     }
+#
+#     port {
+#       port        = 3306
+#       target_port = 3306
+#     }
+#
+#     type = "ClusterIP"
+#   }
+#
+#   depends_on = [kubernetes_stateful_set.mysql]
+# }
 
 # In-cluster DynamoDB Local StatefulSet
-resource "kubernetes_stateful_set" "dynamodb" {
-  metadata {
-    name      = "dynamodb"
-    namespace = kubernetes_namespace.storage.metadata[0].name
-  }
-
-  spec {
-    service_name = "dynamodb"
-    replicas     = 1
-
-    selector {
-      match_labels = {
-        app = "dynamodb"
-      }
-    }
-
-    template {
-      metadata {
-        labels = {
-          app = "dynamodb"
-        }
-      }
-
-      spec {
-        container {
-          name  = "dynamodb"
-          image = "amazon/dynamodb-local:latest"
-
-          args = ["-jar", "DynamoDBLocal.jar", "-sharedDb", "-dbPath", "/data"]
-
-          port {
-            container_port = 8000
-          }
-
-          volume_mount {
-            name       = "dynamodb-storage"
-            mount_path = "/data"
-          }
-        }
-      }
-    }
-
-    volume_claim_template {
-      metadata {
-        name = "dynamodb-storage"
-      }
-
-      spec {
-        access_modes = ["ReadWriteOnce"]
-        resources {
-          requests = {
-            storage = "5Gi"
-          }
-        }
-      }
-    }
-  }
-
-  depends_on = [kubernetes_namespace.storage]
-}
-
-resource "kubernetes_service" "dynamodb" {
-  metadata {
-    name      = "dynamodb"
-    namespace = kubernetes_namespace.storage.metadata[0].name
-  }
-
-  spec {
-    selector = {
-      app = "dynamodb"
-    }
-
-    port {
-      port        = 8000
-      target_port = 8000
-    }
-
-    type = "ClusterIP"
-  }
-
-  depends_on = [kubernetes_stateful_set.dynamodb]
-}
+# resource "kubernetes_stateful_set" "dynamodb" {
+#   metadata {
+#     name      = "dynamodb"
+#     namespace = kubernetes_namespace.storage.metadata[0].name
+#   }
+#
+#   spec {
+#     service_name = "dynamodb"
+#     replicas     = 1
+#
+#     selector {
+#       match_labels = {
+#         app = "dynamodb"
+#       }
+#     }
+#
+#     template {
+#       metadata {
+#         labels = {
+#           app = "dynamodb"
+#         }
+#       }
+#
+#       spec {
+#         container {
+#           name  = "dynamodb"
+#           image = "amazon/dynamodb-local:latest"
+#
+#           args = ["-jar", "DynamoDBLocal.jar", "-sharedDb", "-dbPath", "/data"]
+#
+#           port {
+#             container_port = 8000
+#           }
+#
+#           volume_mount {
+#             name       = "dynamodb-storage"
+#             mount_path = "/data"
+#           }
+#         }
+#       }
+#     }
+#
+#     volume_claim_template {
+#       metadata {
+#         name = "dynamodb-storage"
+#       }
+#
+#       spec {
+#         access_modes = ["ReadWriteOnce"]
+#         resources {
+#           requests = {
+#             storage = "5Gi"
+#           }
+#         }
+#       }
+#     }
+#   }
+#
+#   depends_on = [kubernetes_namespace.storage]
+# }
+#
+# resource "kubernetes_service" "dynamodb" {
+#   metadata {
+#     name      = "dynamodb"
+#     namespace = kubernetes_namespace.storage.metadata[0].name
+#   }
+#
+#   spec {
+#     selector = {
+#       app = "dynamodb"
+#     }
+#
+#     port {
+#       port        = 8000
+#       target_port = 8000
+#     }
+#
+#     type = "ClusterIP"
+#   }
+#
+#   depends_on = [kubernetes_stateful_set.dynamodb]
+# }
 
 # In-cluster RabbitMQ StatefulSet
-resource "kubernetes_stateful_set" "rabbitmq" {
-  metadata {
-    name      = "rabbitmq"
-    namespace = kubernetes_namespace.storage.metadata[0].name
-  }
-
-  spec {
-    service_name = "rabbitmq"
-    replicas     = 1
-
-    selector {
-      match_labels = {
-        app = "rabbitmq"
-      }
-    }
-
-    template {
-      metadata {
-        labels = {
-          app = "rabbitmq"
-        }
-      }
-
-      spec {
-        container {
-          name  = "rabbitmq"
-          image = "rabbitmq:3.12-management-alpine"
-
-          env {
-            name  = "RABBITMQ_DEFAULT_USER"
-            value = "rabbitmq_user"
-          }
-
-          env {
-            name  = "RABBITMQ_DEFAULT_PASS"
-            value = random_password.rabbitmq_password.result
-          }
-
-          port {
-            container_port = 5672
-            name           = "amqp"
-          }
-
-          port {
-            container_port = 15672
-            name           = "management"
-          }
-
-          volume_mount {
-            name       = "rabbitmq-storage"
-            mount_path = "/var/lib/rabbitmq"
-          }
-        }
-      }
-    }
-
-    volume_claim_template {
-      metadata {
-        name = "rabbitmq-storage"
-      }
-
-      spec {
-        access_modes = ["ReadWriteOnce"]
-        resources {
-          requests = {
-            storage = "5Gi"
-          }
-        }
-      }
-    }
-  }
-
-  depends_on = [kubernetes_namespace.storage]
-}
-
-resource "kubernetes_service" "rabbitmq" {
-  metadata {
-    name      = "rabbitmq"
-    namespace = kubernetes_namespace.storage.metadata[0].name
-  }
-
-  spec {
-    selector = {
-      app = "rabbitmq"
-    }
-
-    port {
-      port        = 5672
-      target_port = 5672
-      name        = "amqp"
-    }
-
-    port {
-      port        = 15672
-      target_port = 15672
-      name        = "management"
-    }
-
-    type = "ClusterIP"
-  }
-
-  depends_on = [kubernetes_stateful_set.rabbitmq]
-}
+# resource "kubernetes_stateful_set" "rabbitmq" {
+#   metadata {
+#     name      = "rabbitmq"
+#     namespace = kubernetes_namespace.storage.metadata[0].name
+#   }
+#
+#   spec {
+#     service_name = "rabbitmq"
+#     replicas     = 1
+#
+#     selector {
+#       match_labels = {
+#         app = "rabbitmq"
+#       }
+#     }
+#
+#     template {
+#       metadata {
+#         labels = {
+#           app = "rabbitmq"
+#         }
+#       }
+#
+#       spec {
+#         container {
+#           name  = "rabbitmq"
+#           image = "rabbitmq:3.12-management-alpine"
+#
+#           env {
+#             name  = "RABBITMQ_DEFAULT_USER"
+#             value = "rabbitmq_user"
+#           }
+#
+#           env {
+#             name  = "RABBITMQ_DEFAULT_PASS"
+#             value = random_password.rabbitmq_password.result
+#           }
+#
+#           port {
+#             container_port = 5672
+#             name           = "amqp"
+#           }
+#
+#           port {
+#             container_port = 15672
+#             name           = "management"
+#           }
+#
+#           volume_mount {
+#             name       = "rabbitmq-storage"
+#             mount_path = "/var/lib/rabbitmq"
+#           }
+#         }
+#       }
+#     }
+#
+#     volume_claim_template {
+#       metadata {
+#         name = "rabbitmq-storage"
+#       }
+#
+#       spec {
+#         access_modes = ["ReadWriteOnce"]
+#         resources {
+#           requests = {
+#             storage = "5Gi"
+#           }
+#         }
+#       }
+#     }
+#   }
+#
+#   depends_on = [kubernetes_namespace.storage]
+# }
+#
+# resource "kubernetes_service" "rabbitmq" {
+#   metadata {
+#     name      = "rabbitmq"
+#     namespace = kubernetes_namespace.storage.metadata[0].name
+#   }
+#
+#   spec {
+#     selector = {
+#       app = "rabbitmq"
+#     }
+#
+#     port {
+#       port        = 5672
+#       target_port = 5672
+#       name        = "amqp"
+#     }
+#
+#     port {
+#       port        = 15672
+#       target_port = 15672
+#       name        = "management"
+#     }
+#
+#     type = "ClusterIP"
+#   }
+#
+#   depends_on = [kubernetes_stateful_set.rabbitmq]
+# }
 
 # App Namespace
 resource "kubernetes_namespace" "app" {
   metadata {
-    name = "app"
+    name = var.app_namespace
   }
 
   depends_on = [aws_eks_node_group.main]
 }
 
 # Storage Config Map (Non-sensitive values)
-resource "kubernetes_config_map" "storage_configs" {
+resource "kubernetes_config_map" "storage_config" {
   metadata {
-    name      = "storage-configs"
+    name      = "database"
     namespace = kubernetes_namespace.app.metadata[0].name
   }
 
   data = {
     # AWS RDS PostgreSQL
-    aws_postgres_host     = aws_db_instance.postgres.address
     aws_postgres_port     = "5432"
+    aws_postgres_host     = aws_db_instance.postgres.address
     aws_postgres_database = aws_db_instance.postgres.db_name
     aws_postgres_username = aws_db_instance.postgres.username
 
     # AWS RDS MySQL
-    aws_mysql_host     = aws_db_instance.mysql.address
     aws_mysql_port     = "3306"
+    aws_mysql_host     = aws_db_instance.mysql.address
     aws_mysql_database = aws_db_instance.mysql.db_name
     aws_mysql_username = aws_db_instance.mysql.username
 
@@ -964,42 +970,39 @@ resource "kubernetes_config_map" "storage_configs" {
     aws_redis_port = tostring(aws_elasticache_cluster.redis.cache_nodes[0].port)
 
     # AWS DynamoDB
-    aws_dynamodb_table_name = aws_dynamodb_table.main.name
     aws_dynamodb_region     = var.aws_region
+    aws_dynamodb_table_name = aws_dynamodb_table.main.name
 
     # In-cluster PostgreSQL
-    in_cluster_postgres_host     = "postgres.storage.svc.cluster.local"
     in_cluster_postgres_port     = "5432"
     in_cluster_postgres_database = local.rds_db_name
     in_cluster_postgres_username = local.rds_db_user
+    in_cluster_postgres_host     = "postgres.${var.app_namespace}.svc.cluster.local"
 
     # In-cluster MySQL
-    in_cluster_mysql_host     = "mysql.storage.svc.cluster.local"
+    in_cluster_mysql_host     = "mysql.${var.app_namespace}.svc.cluster.local"
     in_cluster_mysql_port     = "3306"
-    in_cluster_mysql_database = "tinyuka_mysql_db"
-    in_cluster_mysql_username = "mysql_user"
+    in_cluster_mysql_database = local.rds_db_name
+    in_cluster_mysql_username = local.rds_db_user
 
     # In-cluster Redis
-    in_cluster_redis_host = "redis.storage.svc.cluster.local"
     in_cluster_redis_port = "6379"
+    in_cluster_redis_host = "redis.${var.app_namespace}.svc.cluster.local"
+
 
     # In-cluster DynamoDB Local
-    in_cluster_dynamodb_host = "dynamodb.storage.svc.cluster.local"
     in_cluster_dynamodb_port = "8000"
+    in_cluster_dynamodb_host = "dynamodb.${var.app_namespace}.svc.cluster.local"
 
     # In-cluster RabbitMQ
-    in_cluster_rabbitmq_host            = "rabbitmq.storage.svc.cluster.local"
+
     in_cluster_rabbitmq_port            = "5672"
     in_cluster_rabbitmq_management_port = "15672"
     in_cluster_rabbitmq_username        = "rabbitmq_user"
+    in_cluster_rabbitmq_host            = "rabbitmq.${var.app_namespace}.svc.cluster.local"
   }
 
   depends_on = [
-    kubernetes_service.postgres,
-    kubernetes_service.redis,
-    kubernetes_service.mysql,
-    kubernetes_service.dynamodb,
-    kubernetes_service.rabbitmq,
     aws_db_instance.postgres,
     aws_db_instance.mysql,
     aws_elasticache_cluster.redis,
@@ -1010,7 +1013,7 @@ resource "kubernetes_config_map" "storage_configs" {
 # Storage Credentials Secret (Sensitive values only)
 resource "kubernetes_secret" "storage_credentials" {
   metadata {
-    name      = "storage-credentials"
+    name      = "database"
     namespace = kubernetes_namespace.app.metadata[0].name
   }
 
@@ -1025,27 +1028,22 @@ resource "kubernetes_secret" "storage_credentials" {
 
     # In-cluster Passwords and Connection Strings
     in_cluster_postgres_password = random_password.postgres_password.result
-    in_cluster_postgres_url      = "postgresql://${local.rds_db_user}:${random_password.postgres_password.result}@postgres.storage.svc.cluster.local:5432/${local.rds_db_name}"
+    in_cluster_postgres_url      = "postgresql://${local.rds_db_user}:${random_password.postgres_password.result}@postgres.${var.app_namespace}.svc.cluster.local:5432/${local.rds_db_name}"
     in_cluster_mysql_password    = random_password.mysql_password.result
-    in_cluster_mysql_url         = "mysql://mysql_user:${random_password.mysql_password.result}@mysql.storage.svc.cluster.local:3306/${local.rds_db_name}"
+    in_cluster_mysql_url         = "mysql://mysql_user:${random_password.mysql_password.result}@mysql.${var.app_namespace}.svc.cluster.local:3306/${local.rds_db_name}"
     in_cluster_rabbitmq_password = random_password.rabbitmq_password.result
-    in_cluster_rabbitmq_url      = "amqp://rabbitmq_user:${random_password.rabbitmq_password.result}@rabbitmq.storage.svc.cluster.local:5672"
+    in_cluster_rabbitmq_url      = "amqp://rabbitmq_user:${random_password.rabbitmq_password.result}@rabbitmq.${var.app_namespace}.svc.cluster.local:5672"
 
     # AWS DynamoDB connection info
     aws_dynamodb_endpoint = "https://dynamodb.${var.aws_region}.amazonaws.com"
 
     # In-cluster DynamoDB Local connection info
-    in_cluster_dynamodb_endpoint = "http://dynamodb.storage.svc.cluster.local:8000"
+    in_cluster_dynamodb_endpoint = "http://dynamodb.${var.app_namespace}.svc.cluster.local:8000"
   }
 
   type = "Opaque"
 
   depends_on = [
-    kubernetes_service.postgres,
-    kubernetes_service.redis,
-    kubernetes_service.mysql,
-    kubernetes_service.dynamodb,
-    kubernetes_service.rabbitmq,
     aws_db_instance.postgres,
     aws_db_instance.mysql,
     aws_elasticache_cluster.redis,
@@ -1054,7 +1052,7 @@ resource "kubernetes_secret" "storage_credentials" {
 }
 
 # AWS Load Balancer Controller IAM Role
-data "aws_iam_policy_document" "aws_load_balancer_controller_assume_role_policy" {
+data "aws_iam_policy_document" "alb_assume_role_policy" {
   statement {
     actions = ["sts:AssumeRoleWithWebIdentity"]
     effect  = "Allow"
@@ -1077,7 +1075,7 @@ data "aws_iam_policy_document" "aws_load_balancer_controller_assume_role_policy"
 }
 
 resource "aws_iam_role" "aws_load_balancer_controller" {
-  assume_role_policy = data.aws_iam_policy_document.aws_load_balancer_controller_assume_role_policy.json
+  assume_role_policy = data.aws_iam_policy_document.alb_assume_role_policy.json
   name               = "${local.app_name}-aws-load-balancer-controller"
   depends_on = [
     aws_iam_openid_connect_provider.eks
@@ -1231,6 +1229,16 @@ resource "helm_release" "aws_load_balancer_controller" {
   }
 
   set {
+    name  = "region"
+    value = var.aws_region
+  }
+
+  set {
+    name  = "vpcId"
+    value = aws_vpc.main.id
+  }
+
+  set {
     name  = "serviceAccount.create"
     value = "false"
   }
@@ -1274,7 +1282,6 @@ resource "aws_eks_access_entry" "developer_access" {
   kubernetes_groups = ["system-users"]
   user_name         = "developer"
 }
-
 
 resource "aws_eks_access_policy_association" "developer_attachment" {
   cluster_name  = aws_eks_cluster.main.name
@@ -1327,7 +1334,6 @@ resource "aws_eks_access_policy_association" "admin_attachment" {
   depends_on = [aws_eks_access_entry.admin_access]
 }
 
-
 # Outputs
 output "vpc_id" {
   description = "VPC ID"
@@ -1379,17 +1385,22 @@ output "elasticache_redis_auth_token" {
 
 output "in_cluster_postgres_service" {
   description = "In-cluster PostgreSQL service endpoint"
-  value       = "postgres.storage.svc.cluster.local:5432"
+  value       = "postgres.${var.app_namespace}.svc.cluster.local:5432"
 }
 
 output "in_cluster_redis_service" {
   description = "In-cluster Redis service endpoint"
-  value       = "redis.storage.svc.cluster.local:6379"
+  value       = "redis.${var.app_namespace}.svc.cluster.local:6379"
 }
 
-output "storage_credentials_secret" {
+output "database_credentials_secret" {
   description = "Kubernetes secret containing all database credentials"
-  value       = "storage-credentials (in app namespace)"
+  value       = "database (in app namespace)"
+}
+
+output "database_credentials_config" {
+  description = "Kubernetes config set containing all database non-sensitive credentials"
+  value       = "database (in app namespace)"
 }
 
 output "dynamodb_table_name" {
@@ -1404,7 +1415,7 @@ output "dynamodb_table_arn" {
 
 output "in_cluster_dynamodb_service" {
   description = "In-cluster DynamoDB Local service endpoint"
-  value       = "dynamodb.storage.svc.cluster.local:8000"
+  value       = "dynamodb.${var.app_namespace}.svc.cluster.local:8000"
 }
 
 output "rds_mysql_endpoint" {
