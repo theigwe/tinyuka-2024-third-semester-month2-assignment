@@ -74,8 +74,8 @@ data "aws_caller_identity" "current" {}
 
 # Random Password Generation
 resource "random_password" "postgres_password" {
-  length  = 16
-  special = true
+  length           = 16
+  special          = true
   override_special = "/@\"'\\" # Override to avoid issues with certain special characters
 }
 
@@ -85,8 +85,8 @@ resource "random_password" "redis_password" {
 }
 
 resource "random_password" "mysql_password" {
-  length  = 16
-  special = true
+  length           = 16
+  special          = true
   override_special = "/@\"'\\" # Override to avoid issues with certain special characters
 }
 
@@ -319,7 +319,7 @@ resource "aws_eks_cluster" "main" {
   version  = "1.33"
 
   access_config {
-    authentication_mode = "API_AND_CONFIG_MAP"
+    authentication_mode                         = "API_AND_CONFIG_MAP"
     bootstrap_cluster_creator_admin_permissions = true
   }
 
@@ -675,12 +675,12 @@ resource "kubernetes_stateful_set" "mysql" {
 
           env {
             name  = "MYSQL_DATABASE"
-            value = "tinyuka_mysql_db"
+            value = local.rds_db_name
           }
 
           env {
             name  = "MYSQL_USER"
-            value = "mysql_user"
+            value = local.rds_db_user
           }
 
           env {
@@ -1263,17 +1263,17 @@ resource "aws_iam_role" "developer" {
 }
 
 resource "aws_eks_access_entry" "developer_access" {
-  cluster_name  = aws_eks_cluster.main.name
-  principal_arn = aws_iam_role.developer.arn
+  cluster_name      = aws_eks_cluster.main.name
+  principal_arn     = aws_iam_role.developer.arn
   kubernetes_groups = ["system-users"]
-  user_name = "developer"
+  user_name         = "developer"
 }
 
 
 resource "aws_eks_access_policy_association" "developer_attachment" {
   cluster_name  = aws_eks_cluster.main.name
   principal_arn = aws_iam_role.developer.arn
-  policy_arn = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSViewPolicy"
+  policy_arn    = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSViewPolicy"
   access_scope {
     type = "cluster"
   }
@@ -1304,16 +1304,16 @@ resource "aws_iam_role" "admin" {
 }
 
 resource "aws_eks_access_entry" "admin_access" {
-  cluster_name  = aws_eks_cluster.main.name
-  principal_arn = aws_iam_role.admin.arn
+  cluster_name      = aws_eks_cluster.main.name
+  principal_arn     = aws_iam_role.admin.arn
   kubernetes_groups = ["system-users"]
-  user_name = "admin"
+  user_name         = "admin"
 }
 
 resource "aws_eks_access_policy_association" "admin_attachment" {
   cluster_name  = aws_eks_cluster.main.name
   principal_arn = aws_iam_role.admin.arn
-  policy_arn = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+  policy_arn    = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
   access_scope {
     type = "cluster"
   }
