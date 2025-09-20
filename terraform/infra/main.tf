@@ -81,8 +81,7 @@ data "aws_caller_identity" "current" {}
 # Random Password Generation
 resource "random_password" "postgres_password" {
   length           = 16
-  special          = true
-  override_special = "/@\"'\\" # Override to avoid issues with certain special characters
+  special          = false
 }
 
 resource "random_password" "redis_password" {
@@ -92,13 +91,12 @@ resource "random_password" "redis_password" {
 
 resource "random_password" "mysql_password" {
   length           = 16
-  special          = true
-  override_special = "/@\"'\\" # Override to avoid issues with certain special characters
+  special          = false
 }
 
 resource "random_password" "rabbitmq_password" {
   length  = 16
-  special = true
+  special = false
 }
 
 # VPC Configuration
