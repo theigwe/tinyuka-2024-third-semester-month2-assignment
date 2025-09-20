@@ -63,18 +63,19 @@ A comprehensive, production-ready AWS EKS infrastructure with both AWS managed s
 - **Network ACLs**: Default AWS network ACLs for additional security
 
 ### **EKS Cluster**
-- **Version**: Kubernetes 1.28 (latest stable)
+- **Version**: Kubernetes 1.33 (latest)
 - **Node Group**: 2 t3.small instances for cost optimization
+- **Authentication**: API_AND_CONFIG_MAP mode with EKS access entries
 - **OIDC Provider**: Enables IAM Roles for Service Accounts (IRSA)
 - **AWS Load Balancer Controller**: Helm-deployed for ALB/NLB support
 
 ### **AWS Managed Services**
-- **RDS PostgreSQL**: 15.4 (db.t3.micro, 20GB gp3 storage)
+- **RDS PostgreSQL**: 15.8 (db.t3.micro, 20GB gp3 storage)
 - **RDS MySQL**: 8.0 (db.t3.micro, 20GB gp3 storage)
 - **ElastiCache Redis**: 7 (cache.t3.micro, single node)
-- **DynamoDB**: Pay-per-request table with on-demand billing
+- **DynamoDB**: Pay-per-request table with string hash key "id"
 
-### **In-Cluster Services** (storage namespace)
+### **In-Cluster Services** (app namespace)
 - **PostgreSQL**: StatefulSet with 10Gi persistent storage
 - **MySQL**: StatefulSet with 10Gi persistent storage
 - **Redis**: StatefulSet with 5Gi persistent storage
@@ -83,16 +84,17 @@ A comprehensive, production-ready AWS EKS infrastructure with both AWS managed s
 
 ### **Access Control & Security**
 - **IAM Roles**:
-  - **Developer Role**: `AmazonEKSViewerPolicy` (read-only access)
-  - **Admin Role**: `AmazonEKSClusterAdminPolicy` (full admin access)
-- **aws-auth ConfigMap**: Maps IAM roles to Kubernetes groups
-- **RBAC**: Custom ClusterRole for developer read-only access
+  - **Developer Role**: `AmazonEKSViewPolicy` (read-only access via EKS access entries)
+  - **Admin Role**: `AmazonEKSClusterAdminPolicy` (full admin access via EKS access entries)
+- **EKS Access Entries**: Modern IAM-to-Kubernetes access mapping
+- **Authentication Mode**: API_AND_CONFIG_MAP for backward compatibility
 - **Service Accounts**: IRSA-enabled for AWS service integration
 
 ### **Configuration Management**
-- **storage-configs ConfigMap**: Non-sensitive connection details (hosts, ports, usernames)
-- **storage-credentials Secret**: Sensitive data (passwords, connection URLs)
-- **Random Password Generation**: Secure 16-character passwords for all services
+- **database ConfigMap**: Non-sensitive connection details (hosts, ports, usernames, table names)
+- **database Secret**: Sensitive data (passwords, connection URLs, endpoints)
+- **Random Password Generation**: Secure 16-character passwords (no special characters for compatibility)
+- **Comprehensive DynamoDB Support**: Both AWS and in-cluster endpoints configured
 
 ## 🚀 **Deployment Instructions**
 
@@ -140,7 +142,7 @@ terraform apply
 #### **For Cluster Admin (Infrastructure Creator)**
 ```bash
 # Configure kubectl for the cluster creator (admin access)
-aws eks update-kubeconfig --region eu-west-1 --name tinyuka-tinyuka-eks-cluster
+aws eks update-kubeconfig --region eu-west-1 --name tinyuka-cluster
 
 # Verify access
 kubectl get nodes
@@ -262,30 +264,40 @@ spec:
         - name: AWS_POSTGRES_URL
           valueFrom:
             secretKeyRef:
-              name: storage-credentials
+              name: database
               key: aws_postgres_url
         - name: AWS_MYSQL_URL
           valueFrom:
             secretKeyRef:
-              name: storage-credentials
+              name: database
               key: aws_mysql_url
         - name: AWS_REDIS_URL
           valueFrom:
             secretKeyRef:
-              name: storage-credentials
+              name: database
               key: aws_redis_url
+        - name: AWS_DYNAMODB_ENDPOINT
+          valueFrom:
+            secretKeyRef:
+              name: database
+              key: aws_dynamodb_endpoint
 
         # In-Cluster Services
         - name: CLUSTER_POSTGRES_URL
           valueFrom:
             secretKeyRef:
-              name: storage-credentials
+              name: database
               key: in_cluster_postgres_url
         - name: CLUSTER_RABBITMQ_URL
           valueFrom:
             secretKeyRef:
-              name: storage-credentials
+              name: database
               key: in_cluster_rabbitmq_url
+        - name: CLUSTER_DYNAMODB_ENDPOINT
+          valueFrom:
+            secretKeyRef:
+              name: database
+              key: in_cluster_dynamodb_endpoint
 ```
 
 #### **Using ConfigMap for Non-Sensitive Data**
@@ -303,9 +315,9 @@ spec:
         image: my-app:latest
         envFrom:
         - configMapRef:
-            name: storage-configs  # Contains hosts, ports, usernames
+            name: database  # Contains hosts, ports, usernames, table names
         - secretRef:
-            name: storage-credentials  # Contains passwords and URLs
+            name: database  # Contains passwords and URLs
 ```
 
 ### **Accessing Credentials**
@@ -313,13 +325,13 @@ spec:
 #### **View Available Configurations**
 ```bash
 # View non-sensitive configuration
-kubectl get configmap storage-configs -n app -o yaml
+kubectl get configmap database -n app -o yaml
 
 # List available credential keys
-kubectl get secret storage-credentials -n app -o jsonpath='{.data}' | jq 'keys'
+kubectl get secret database -n app -o jsonpath='{.data}' | jq 'keys'
 
 # Retrieve specific connection URL (decode base64)
-kubectl get secret storage-credentials -n app -o jsonpath='{.data.aws_postgres_url}' | base64 -d
+kubectl get secret database -n app -o jsonpath='{.data.aws_postgres_url}' | base64 -d
 ```
 
 ## 🔍 **Monitoring and Troubleshooting**
