@@ -1,18 +1,18 @@
-name: Terraform Backend
+name: Terraform Infrastructure
 
 on:
   push:
     paths:
-      - 'terraform/backend/**'
-      - '.github/workflows/terraform-backend.yml'
+      - 'terraform/infra/**'
+      - '.github/workflows/terraform-infra.yml'
   pull_request:
     paths:
-      - 'terraform/backend/**'
-      - '.github/workflows/terraform-backend.yml'
+      - 'terraform/infra/**'
+      - '.github/workflows/terraform-infra.yml'
 
 env:
   TF_VERSION: 1.6.0
-  WORKING_DIRECTORY: terraform/backend
+  WORKING_DIRECTORY: terraform/infra
   TF_VAR_aws_region: ${{ secrets.AWS_REGION }}
   TF_VAR_backend_bucket: ${{ secrets.TF_STATE_BUCKET }}
   TF_VAR_backend_bucket_key: ${{ secrets.TF_STATE_KEY }}
@@ -39,13 +39,17 @@ jobs:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
+      - name: Terraform Init
+        working-directory: ${{ env.WORKING_DIRECTORY }}
+        run: |
+          terraform init \
+            -backend-config="bucket=${{ secrets.TF_STATE_BUCKET }}" \
+            -backend-config="key=${{ secrets.TF_STATE_KEY }}" \
+            -backend-config="region=${{ secrets.AWS_REGION }}"
+
       - name: Terraform Format Check
         working-directory: ${{ env.WORKING_DIRECTORY }}
         run: terraform fmt -check
-
-      - name: Terraform Init
-        working-directory: ${{ env.WORKING_DIRECTORY }}
-        run: terraform init
 
       - name: Terraform Validate
         working-directory: ${{ env.WORKING_DIRECTORY }}
@@ -76,47 +80,21 @@ jobs:
 
       - name: Terraform Init
         working-directory: ${{ env.WORKING_DIRECTORY }}
-        run: terraform init
+        run: |
+          terraform init \
+            -backend-config="bucket=${{ secrets.TF_STATE_BUCKET }}" \
+            -backend-config="key=${{ secrets.TF_STATE_KEY }}" \
+            -backend-config="region=${{ secrets.AWS_REGION }}"
 
       - name: Terraform Plan
         working-directory: ${{ env.WORKING_DIRECTORY }}
         run: terraform plan -no-color
 
-  check-bucket:
-    name: Check if S3 bucket exists
-    runs-on: ubuntu-latest
-    environment: dev
-    if: github.ref == 'refs/heads/main' && (github.event.pull_request.merged == true || github.event_name == 'push')
-    outputs:
-      bucket-exists: ${{ steps.check-s3.outputs.exists }}
-
-    steps:
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-region: ${{ secrets.AWS_REGION }}
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-
-      - name: Check if S3 bucket exists
-        id: check-s3
-        run: |
-          BUCKET_NAME="${{ secrets.TF_STATE_BUCKET }}"
-
-          if aws s3api head-bucket --bucket "$BUCKET_NAME" 2>/dev/null; then
-            echo "Bucket $BUCKET_NAME exists"
-            echo "exists=true" >> $GITHUB_OUTPUT
-          else
-            echo "Bucket $BUCKET_NAME does not exist"
-            echo "exists=false" >> $GITHUB_OUTPUT
-          fi
-
-
   apply:
+    needs: validate
     name: Terraform Apply
     runs-on: ubuntu-latest
     environment: dev
-    needs: [validate, check-bucket]
     if: github.ref == 'refs/heads/main' && (github.event.pull_request.merged == true || github.event_name == 'push') && needs.check-bucket.outputs.bucket-exists == 'false'
 
     steps:
@@ -137,7 +115,11 @@ jobs:
 
       - name: Terraform Init
         working-directory: ${{ env.WORKING_DIRECTORY }}
-        run: terraform init
+        run: |
+          terraform init \
+            -backend-config="bucket=${{ secrets.TF_STATE_BUCKET }}" \
+            -backend-config="key=${{ secrets.TF_STATE_KEY }}" \
+            -backend-config="region=${{ secrets.AWS_REGION }}"
 
       - name: Terraform Plan
         working-directory: ${{ env.WORKING_DIRECTORY }}
@@ -146,23 +128,3 @@ jobs:
       - name: Terraform Apply
         working-directory: ${{ env.WORKING_DIRECTORY }}
         run: terraform apply -auto-approve
-
-      - name: Bucket Creation Success
-        run: |
-          echo "✅ S3 bucket ${{ secrets.TF_STATE_BUCKET }} has been successfully created!"
-          echo "The Terraform backend is now ready for use."
-
-
-  skip-apply:
-    name: Skip Apply - Bucket Exists
-    runs-on: ubuntu-latest
-    environment: dev
-    needs: [validate, check-bucket]
-    if: github.ref == 'refs/heads/main' && (github.event.pull_request.merged == true || github.event_name == 'push') && needs.check-bucket.outputs.bucket-exists == 'true'
-
-    steps:
-      - name: Bucket Already Exists
-        run: |
-          echo "ℹ️ S3 bucket ${{ secrets.TF_STATE_BUCKET }} already exists."
-          echo "Skipping Terraform apply to prevent conflicts."
-          echo "The Terraform backend is already configured."
