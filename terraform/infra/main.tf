@@ -1030,6 +1030,12 @@ resource "kubernetes_secret" "storage_credentials" {
     in_cluster_mysql_url         = "mysql://mysql_user:${random_password.mysql_password.result}@mysql.storage.svc.cluster.local:3306/${local.rds_db_name}"
     in_cluster_rabbitmq_password = random_password.rabbitmq_password.result
     in_cluster_rabbitmq_url      = "amqp://rabbitmq_user:${random_password.rabbitmq_password.result}@rabbitmq.storage.svc.cluster.local:5672"
+
+    # AWS DynamoDB connection info
+    aws_dynamodb_endpoint = "https://dynamodb.${var.aws_region}.amazonaws.com"
+
+    # In-cluster DynamoDB Local connection info
+    in_cluster_dynamodb_endpoint = "http://dynamodb.storage.svc.cluster.local:8000"
   }
 
   type = "Opaque"
@@ -1384,6 +1390,33 @@ output "in_cluster_redis_service" {
 output "storage_credentials_secret" {
   description = "Kubernetes secret containing all database credentials"
   value       = "storage-credentials (in app namespace)"
+}
+
+output "dynamodb_table_name" {
+  description = "DynamoDB table name"
+  value       = aws_dynamodb_table.main.name
+}
+
+output "dynamodb_table_arn" {
+  description = "DynamoDB table ARN"
+  value       = aws_dynamodb_table.main.arn
+}
+
+output "in_cluster_dynamodb_service" {
+  description = "In-cluster DynamoDB Local service endpoint"
+  value       = "dynamodb.storage.svc.cluster.local:8000"
+}
+
+output "rds_mysql_endpoint" {
+  description = "RDS MySQL endpoint"
+  value       = aws_db_instance.mysql.endpoint
+  sensitive   = true
+}
+
+output "rds_mysql_connection_string" {
+  description = "RDS MySQL connection string"
+  value       = "mysql://${local.rds_db_user}:${random_password.mysql_password.result}@${aws_db_instance.mysql.endpoint}:3306/${local.rds_db_name}"
+  sensitive   = true
 }
 
 output "kubectl_config_command" {
