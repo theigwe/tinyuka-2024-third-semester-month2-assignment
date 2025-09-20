@@ -1,11 +1,11 @@
 variable "aws_region" {
-    description = "AWS region"
-    type        = string
-    default     = "eu-west-1"
+  description = "AWS region"
+  type        = string
+  default     = "eu-west-1"
 }
 
 locals {
-  postgres_db_name = "tinyuka_app_db"
+  postgres_db_name  = "tinyuka_app_db"
   postgres_username = "tinyuka_user"
 }
 
@@ -80,7 +80,7 @@ resource "random_password" "postgres_password" {
 
 resource "random_password" "redis_password" {
   length  = 16
-  special = false  # Redis AUTH doesn't work well with some special characters
+  special = false # Redis AUTH doesn't work well with some special characters
 }
 
 resource "random_password" "in_cluster_postgres_password" {
@@ -110,7 +110,7 @@ resource "aws_vpc" "main" {
   enable_dns_support   = true
 
   tags = {
-    Name = "tinyuka-eks-vpc"
+    Name                                = "tinyuka-eks-vpc"
     "kubernetes.io/cluster/eks-cluster" = "shared"
   }
 }
@@ -133,7 +133,7 @@ resource "aws_subnet" "public" {
   map_public_ip_on_launch = true
 
   tags = {
-    Name = "tinyuka-eks-public-subnet-${count.index + 1}"
+    Name                                = "tinyuka-eks-public-subnet-${count.index + 1}"
     "kubernetes.io/cluster/eks-cluster" = "shared"
     "kubernetes.io/role/elb"            = "1"
   }
@@ -467,7 +467,7 @@ resource "aws_eks_cluster" "main" {
   version  = "1.28"
 
   vpc_config {
-    subnet_ids = aws_subnet.public[*].id
+    subnet_ids         = aws_subnet.public[*].id
     security_group_ids = [aws_security_group.eks_cluster.id]
   }
 
@@ -510,12 +510,12 @@ resource "aws_db_subnet_group" "main" {
 
 # RDS PostgreSQL
 resource "aws_db_instance" "postgres" {
-  identifier             = "tinyuka-eks-postgres"
-  engine                 = "postgres"
-  engine_version         = "15.4"
-  instance_class         = "db.t3.micro"
-  allocated_storage      = 20
-  storage_type           = "gp3"
+  identifier        = "tinyuka-eks-postgres"
+  engine            = "postgres"
+  engine_version    = "15.4"
+  instance_class    = "db.t3.micro"
+  allocated_storage = 20
+  storage_type      = "gp3"
 
   db_name  = local.postgres_db_name
   username = local.postgres_username
@@ -525,7 +525,7 @@ resource "aws_db_instance" "postgres" {
   db_subnet_group_name   = aws_db_subnet_group.main.name
 
   backup_retention_period = 0
-  skip_final_snapshot    = true
+  skip_final_snapshot     = true
 
   tags = {
     Name = "tinyuka-eks-postgres"
@@ -556,12 +556,12 @@ resource "aws_elasticache_cluster" "redis" {
 
 # RDS MySQL
 resource "aws_db_instance" "mysql" {
-  identifier             = "tinyuka-eks-mysql"
-  engine                 = "mysql"
-  engine_version         = "8.0"
-  instance_class         = "db.t3.micro"
-  allocated_storage      = 20
-  storage_type           = "gp3"
+  identifier        = "tinyuka-eks-mysql"
+  engine            = "mysql"
+  engine_version    = "8.0"
+  instance_class    = "db.t3.micro"
+  allocated_storage = 20
+  storage_type      = "gp3"
 
   db_name  = "tinyuka_mysql_db"
   username = "mysql_user"
@@ -571,7 +571,7 @@ resource "aws_db_instance" "mysql" {
   db_subnet_group_name   = aws_db_subnet_group.main.name
 
   backup_retention_period = 0
-  skip_final_snapshot    = true
+  skip_final_snapshot     = true
 
   tags = {
     Name = "tinyuka-eks-mysql"
@@ -580,9 +580,9 @@ resource "aws_db_instance" "mysql" {
 
 # DynamoDB Table
 resource "aws_dynamodb_table" "main" {
-  name           = "tinyuka-dynamodb-table"
-  billing_mode   = "PAY_PER_REQUEST"
-  hash_key       = "id"
+  name         = "tinyuka-dynamodb-table"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "id"
 
   attribute {
     name = "id"
@@ -1009,12 +1009,12 @@ resource "kubernetes_stateful_set" "rabbitmq" {
 
           port {
             container_port = 5672
-            name          = "amqp"
+            name           = "amqp"
           }
 
           port {
             container_port = 15672
-            name          = "management"
+            name           = "management"
           }
 
           volume_mount {
@@ -1131,10 +1131,10 @@ resource "kubernetes_config_map" "storage_configs" {
     in_cluster_dynamodb_port = "8000"
 
     # In-cluster RabbitMQ
-    in_cluster_rabbitmq_host           = "rabbitmq.storage.svc.cluster.local"
-    in_cluster_rabbitmq_port           = "5672"
+    in_cluster_rabbitmq_host            = "rabbitmq.storage.svc.cluster.local"
+    in_cluster_rabbitmq_port            = "5672"
     in_cluster_rabbitmq_management_port = "15672"
-    in_cluster_rabbitmq_username       = "rabbitmq_user"
+    in_cluster_rabbitmq_username        = "rabbitmq_user"
   }
 
   depends_on = [
