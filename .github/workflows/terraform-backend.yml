@@ -83,6 +83,7 @@ jobs:
         run: terraform plan -no-color
 
   check-bucket:
+    environment: dev
     name: Check if S3 bucket exists
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main' && (github.event.pull_request.merged == true || github.event_name == 'push')
@@ -151,6 +152,7 @@ jobs:
           echo "The Terraform backend is now ready for use."
 
   skip-apply:
+    environment: dev
     needs: [check-bucket]
     name: Skip Apply - Bucket Exists
     runs-on: ubuntu-latest
