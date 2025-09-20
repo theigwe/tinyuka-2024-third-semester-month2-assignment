@@ -95,7 +95,7 @@ jobs:
     name: Terraform Apply
     runs-on: ubuntu-latest
     environment: dev
-    if: github.ref == 'refs/heads/main' && (github.event.pull_request.merged == true || github.event_name == 'push') && needs.check-bucket.outputs.bucket-exists == 'false'
+    if: github.ref == 'refs/heads/main' && (github.event.pull_request.merged == true || github.event_name == 'push')
 
     steps:
       - name: Checkout code
