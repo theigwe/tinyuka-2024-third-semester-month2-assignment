@@ -132,7 +132,7 @@ jobs:
       - name: Terraform Apply
         id: exec-apply
         working-directory: ${{ env.WORKING_DIRECTORY }}
-        run:
+        run: |
           terraform apply -auto-approve
           echo "applied=true" >> $GITHUB_OUTPUT
   in-cluster-database-states:
