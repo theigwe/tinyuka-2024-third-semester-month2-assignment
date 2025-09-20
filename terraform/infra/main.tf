@@ -1257,7 +1257,7 @@ resource "aws_iam_role" "eks_developer" {
 
 resource "aws_iam_role_policy_attachment" "eks_developer_attach" {
   role       = aws_iam_role.eks_developer.name
-  policy_arn = "arn:aws:iam::aws:policy/AmazonEKSViewerPolicy"
+  policy_arn = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSAdminPolicy"
 }
 
 # Admin IAM Role for EKS Admin Access
@@ -1284,7 +1284,7 @@ resource "aws_iam_role" "eks_admin" {
 
 resource "aws_iam_role_policy_attachment" "eks_admin_attach" {
   role       = aws_iam_role.eks_admin.name
-  policy_arn = "arn:aws:iam::aws:policy/AmazonEKSClusterAdminPolicy"
+  policy_arn = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
 }
 
 # Data source for current AWS identity
