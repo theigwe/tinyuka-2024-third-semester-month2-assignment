@@ -162,8 +162,8 @@ jobs:
           kubectl cluster-info
           kubectl get nodes
       - name: Deploy Kubernetes manifests
+        working-directory: ${{ env.WORKING_DIRECTORY }}
         run: |
-          working-directory: ${{ env.WORKING_DIRECTORY }}
           kubectl apply -f database/ --namespace=${{ secrets.KUBE_APP_NAMESPACE }}
       - name: Wait for deployments to be ready
         run: |
