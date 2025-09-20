@@ -5,8 +5,9 @@ variable "aws_region" {
 }
 
 locals {
-  postgres_db_name  = "tinyuka_app_db"
-  postgres_username = "tinyuka_user"
+  rds_db_user = "tinyuka"
+  rds_db_name = "tinyuka_app"
+  app_name    = "tinyuka-cluster"
 }
 
 terraform {
@@ -45,37 +46,37 @@ provider "aws" {
   region = var.aws_region
 }
 
+provider "kubernetes" {
+  host                   = aws_eks_cluster.main.endpoint
+  cluster_ca_certificate = base64decode(aws_eks_cluster.main.certificate_authority[0].data)
+  token                  = data.aws_eks_cluster_auth.main.token
+}
+
+provider "helm" {
+  kubernetes {
+    host                   = aws_eks_cluster.main.endpoint
+    cluster_ca_certificate = base64decode(aws_eks_cluster.main.certificate_authority[0].data)
+    token                  = data.aws_eks_cluster_auth.main.token
+  }
+}
+
 # Data sources
 data "aws_availability_zones" "available" {
   state = "available"
 }
 
-data "aws_eks_cluster" "cluster" {
+data "aws_eks_cluster_auth" "main" {
   name = aws_eks_cluster.main.name
 }
 
-data "aws_eks_cluster_auth" "cluster" {
-  name = aws_eks_cluster.main.name
-}
 
-provider "kubernetes" {
-  host                   = data.aws_eks_cluster.cluster.endpoint
-  cluster_ca_certificate = base64decode(data.aws_eks_cluster.cluster.certificate_authority[0].data)
-  token                  = data.aws_eks_cluster_auth.cluster.token
-}
-
-provider "helm" {
-  kubernetes {
-    host                   = data.aws_eks_cluster.cluster.endpoint
-    cluster_ca_certificate = base64decode(data.aws_eks_cluster.cluster.certificate_authority[0].data)
-    token                  = data.aws_eks_cluster_auth.cluster.token
-  }
-}
+data "aws_caller_identity" "current" {}
 
 # Random Password Generation
 resource "random_password" "postgres_password" {
-  length  = 16
-  special = true
+  length           = 16
+  special          = true
+  override_special = "/@\"'\\" # Override to avoid issues with certain special characters
 }
 
 resource "random_password" "redis_password" {
@@ -83,19 +84,10 @@ resource "random_password" "redis_password" {
   special = false # Redis AUTH doesn't work well with some special characters
 }
 
-resource "random_password" "in_cluster_postgres_password" {
-  length  = 16
-  special = true
-}
-
 resource "random_password" "mysql_password" {
-  length  = 16
-  special = true
-}
-
-resource "random_password" "in_cluster_mysql_password" {
-  length  = 16
-  special = true
+  length           = 16
+  special          = true
+  override_special = "/@\"'\\" # Override to avoid issues with certain special characters
 }
 
 resource "random_password" "rabbitmq_password" {
@@ -110,7 +102,7 @@ resource "aws_vpc" "main" {
   enable_dns_support   = true
 
   tags = {
-    Name                                = "tinyuka-eks-vpc"
+    Name                                = "${local.app_name}-vpc"
     "kubernetes.io/cluster/eks-cluster" = "shared"
   }
 }
@@ -119,7 +111,7 @@ resource "aws_internet_gateway" "main" {
   vpc_id = aws_vpc.main.id
 
   tags = {
-    Name = "tinyuka-eks-igw"
+    Name = "${local.app_name}-igw"
   }
 }
 
@@ -133,7 +125,7 @@ resource "aws_subnet" "public" {
   map_public_ip_on_launch = true
 
   tags = {
-    Name                                = "tinyuka-eks-public-subnet-${count.index + 1}"
+    Name                                = "${local.app_name}-public-subnet-${count.index + 1}"
     "kubernetes.io/cluster/eks-cluster" = "shared"
     "kubernetes.io/role/elb"            = "1"
   }
@@ -148,7 +140,7 @@ resource "aws_route_table" "public" {
   }
 
   tags = {
-    Name = "tinyuka-eks-public-rt"
+    Name = "${local.app_name}-public-rt"
   }
 }
 
@@ -161,7 +153,7 @@ resource "aws_route_table_association" "public" {
 
 # Security Groups
 resource "aws_security_group" "eks_cluster" {
-  name_prefix = "tinyuka-eks-cluster-"
+  name_prefix = "${local.app_name}-"
   vpc_id      = aws_vpc.main.id
 
   egress {
@@ -172,12 +164,12 @@ resource "aws_security_group" "eks_cluster" {
   }
 
   tags = {
-    Name = "tinyuka-eks-cluster-sg"
+    Name = "${local.app_name}-sg"
   }
 }
 
 resource "aws_security_group" "eks_nodes" {
-  name_prefix = "tinyuka-eks-nodes-"
+  name_prefix = "${local.app_name}-nodes-"
   vpc_id      = aws_vpc.main.id
 
   ingress {
@@ -195,12 +187,12 @@ resource "aws_security_group" "eks_nodes" {
   }
 
   tags = {
-    Name = "tinyuka-eks-nodes-sg"
+    Name = "${local.app_name}-nodes-sg"
   }
 }
 
 resource "aws_security_group" "rds" {
-  name_prefix = "tinyuka-rds-"
+  name_prefix = "${local.app_name}-rds-"
   vpc_id      = aws_vpc.main.id
 
   ingress {
@@ -211,12 +203,12 @@ resource "aws_security_group" "rds" {
   }
 
   tags = {
-    Name = "tinyuka-rds-sg"
+    Name = "${local.app_name}-rds-sg"
   }
 }
 
 resource "aws_security_group" "elasticache" {
-  name_prefix = "tinyuka-elasticache-"
+  name_prefix = "${local.app_name}-elasticache-"
   vpc_id      = aws_vpc.main.id
 
   ingress {
@@ -227,12 +219,12 @@ resource "aws_security_group" "elasticache" {
   }
 
   tags = {
-    Name = "tinyuka-elasticache-sg"
+    Name = "${local.app_name}-elasticache-sg"
   }
 }
 
 resource "aws_security_group" "mysql" {
-  name_prefix = "tinyuka-mysql-"
+  name_prefix = "${local.app_name}-mysql-"
   vpc_id      = aws_vpc.main.id
 
   ingress {
@@ -243,13 +235,13 @@ resource "aws_security_group" "mysql" {
   }
 
   tags = {
-    Name = "tinyuka-mysql-sg"
+    Name = "${local.app_name}-mysql-sg"
   }
 }
 
 # EKS IAM Roles
 resource "aws_iam_role" "eks_cluster" {
-  name = "tinyuka-eks-cluster-role"
+  name = "${local.app_name}-role"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -271,7 +263,7 @@ resource "aws_iam_role_policy_attachment" "eks_cluster_policy" {
 }
 
 resource "aws_iam_role" "eks_nodes" {
-  name = "tinyuka-eks-nodes-role"
+  name = "${local.app_name}-nodes-role"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -302,149 +294,6 @@ resource "aws_iam_role_policy_attachment" "eks_container_registry_policy" {
   role       = aws_iam_role.eks_nodes.name
 }
 
-# AWS Load Balancer Controller IAM Role
-data "aws_iam_policy_document" "aws_load_balancer_controller_assume_role_policy" {
-  statement {
-    actions = ["sts:AssumeRoleWithWebIdentity"]
-    effect  = "Allow"
-
-    condition {
-      test     = "StringEquals"
-      variable = "${replace(aws_eks_cluster.main.identity[0].oidc[0].issuer, "https://", "")}:sub"
-      values   = ["system:serviceaccount:kube-system:aws-load-balancer-controller"]
-    }
-
-    principals {
-      identifiers = [aws_iam_openid_connect_provider.eks.arn]
-      type        = "Federated"
-    }
-  }
-}
-
-resource "aws_iam_role" "aws_load_balancer_controller" {
-  assume_role_policy = data.aws_iam_policy_document.aws_load_balancer_controller_assume_role_policy.json
-  name               = "tinyuka-aws-load-balancer-controller"
-}
-
-resource "aws_iam_policy" "aws_load_balancer_controller" {
-  name = "tinyuka-AWSLoadBalancerControllerIAMPolicy"
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect = "Allow"
-        Action = [
-          "iam:CreateServiceLinkedRole"
-        ]
-        Resource = "*"
-        Condition = {
-          StringEquals = {
-            "iam:AWSServiceName" = "elasticloadbalancing.amazonaws.com"
-          }
-        }
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "ec2:DescribeAccountAttributes",
-          "ec2:DescribeAddresses",
-          "ec2:DescribeAvailabilityZones",
-          "ec2:DescribeInternetGateways",
-          "ec2:DescribeVpcs",
-          "ec2:DescribeVpcPeeringConnections",
-          "ec2:DescribeSubnets",
-          "ec2:DescribeSecurityGroups",
-          "ec2:DescribeInstances",
-          "ec2:DescribeNetworkInterfaces",
-          "ec2:DescribeTags",
-          "ec2:GetCoipPoolUsage",
-          "ec2:GetSecurityGroupsForVpc"
-        ]
-        Resource = "*"
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "elasticloadbalancing:DescribeLoadBalancers",
-          "elasticloadbalancing:DescribeLoadBalancerAttributes",
-          "elasticloadbalancing:DescribeListeners",
-          "elasticloadbalancing:DescribeListenerCertificates",
-          "elasticloadbalancing:DescribeSSLPolicies",
-          "elasticloadbalancing:DescribeRules",
-          "elasticloadbalancing:DescribeTargetGroups",
-          "elasticloadbalancing:DescribeTargetGroupAttributes",
-          "elasticloadbalancing:DescribeTargetHealth",
-          "elasticloadbalancing:DescribeTags"
-        ]
-        Resource = "*"
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "elasticloadbalancing:CreateLoadBalancer",
-          "elasticloadbalancing:CreateTargetGroup"
-        ]
-        Resource = "*"
-        Condition = {
-          StringEquals = {
-            "elasticloadbalancing:CreateAction" = [
-              "CreateTargetGroup",
-              "CreateLoadBalancer"
-            ]
-          }
-        }
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "elasticloadbalancing:CreateListener",
-          "elasticloadbalancing:DeleteListener",
-          "elasticloadbalancing:CreateRule",
-          "elasticloadbalancing:DeleteRule"
-        ]
-        Resource = "*"
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "elasticloadbalancing:AddTags",
-          "elasticloadbalancing:RemoveTags"
-        ]
-        Resource = [
-          "arn:aws:elasticloadbalancing:*:*:targetgroup/*/*",
-          "arn:aws:elasticloadbalancing:*:*:loadbalancer/net/*/*",
-          "arn:aws:elasticloadbalancing:*:*:loadbalancer/app/*/*"
-        ]
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "elasticloadbalancing:RegisterTargets",
-          "elasticloadbalancing:DeregisterTargets"
-        ]
-        Resource = "arn:aws:elasticloadbalancing:*:*:targetgroup/*/*"
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "elasticloadbalancing:SetWebAcl",
-          "elasticloadbalancing:ModifyListener",
-          "elasticloadbalancing:AddListenerCertificates",
-          "elasticloadbalancing:RemoveListenerCertificates",
-          "elasticloadbalancing:ModifyRule"
-        ]
-        Resource = "*"
-      }
-    ]
-  })
-}
-
-resource "aws_iam_role_policy_attachment" "aws_load_balancer_controller_attach" {
-  role       = aws_iam_role.aws_load_balancer_controller.name
-  policy_arn = aws_iam_policy.aws_load_balancer_controller.arn
-}
-
 # EKS OIDC Identity Provider
 data "tls_certificate" "eks" {
   url = aws_eks_cluster.main.identity[0].oidc[0].issuer
@@ -456,15 +305,23 @@ resource "aws_iam_openid_connect_provider" "eks" {
   url             = aws_eks_cluster.main.identity[0].oidc[0].issuer
 
   tags = {
-    Name = "tinyuka-eks-irsa"
+    Name = "${local.app_name}-irsa"
   }
+
+  depends_on = [
+  aws_eks_cluster.main]
 }
 
 # EKS Cluster
 resource "aws_eks_cluster" "main" {
-  name     = "tinyuka-tinyuka-eks-cluster"
+  name     = local.app_name
   role_arn = aws_iam_role.eks_cluster.arn
-  version  = "1.28"
+  version  = "1.33"
+
+  access_config {
+    authentication_mode                         = "API_AND_CONFIG_MAP"
+    bootstrap_cluster_creator_admin_permissions = true
+  }
 
   vpc_config {
     subnet_ids         = aws_subnet.public[*].id
@@ -479,7 +336,7 @@ resource "aws_eks_cluster" "main" {
 # EKS Node Group
 resource "aws_eks_node_group" "main" {
   cluster_name    = aws_eks_cluster.main.name
-  node_group_name = "tinyuka-main-nodes"
+  node_group_name = "${local.app_name}-main-nodes"
   node_role_arn   = aws_iam_role.eks_nodes.arn
   subnet_ids      = aws_subnet.public[*].id
 
@@ -500,25 +357,25 @@ resource "aws_eks_node_group" "main" {
 
 # RDS Subnet Group
 resource "aws_db_subnet_group" "main" {
-  name       = "tinyuka-eks-db-subnet-group"
+  name       = "${local.app_name}-db-subnet-group"
   subnet_ids = aws_subnet.public[*].id
 
   tags = {
-    Name = "tinyuka-eks-db-subnet-group"
+    Name = "${local.app_name}-db-subnet-group"
   }
 }
 
 # RDS PostgreSQL
 resource "aws_db_instance" "postgres" {
-  identifier        = "tinyuka-eks-postgres"
+  identifier        = "${local.app_name}-postgres"
   engine            = "postgres"
-  engine_version    = "15.4"
+  engine_version    = "15.8"
   instance_class    = "db.t3.micro"
   allocated_storage = 20
   storage_type      = "gp3"
 
-  db_name  = local.postgres_db_name
-  username = local.postgres_username
+  db_name  = local.rds_db_name
+  username = local.rds_db_user
   password = random_password.postgres_password.result
 
   vpc_security_group_ids = [aws_security_group.rds.id]
@@ -528,19 +385,19 @@ resource "aws_db_instance" "postgres" {
   skip_final_snapshot     = true
 
   tags = {
-    Name = "tinyuka-eks-postgres"
+    Name = "${local.app_name}-postgres"
   }
 }
 
 # ElasticCache Subnet Group
 resource "aws_elasticache_subnet_group" "main" {
-  name       = "tinyuka-eks-cache-subnet-group"
+  name       = "${local.app_name}-cache-subnet-group"
   subnet_ids = aws_subnet.public[*].id
 }
 
 # ElasticCache Redis
 resource "aws_elasticache_cluster" "redis" {
-  cluster_id           = "tinyuka-eks-redis"
+  cluster_id           = "${local.app_name}-redis"
   engine               = "redis"
   node_type            = "cache.t3.micro"
   num_cache_nodes      = 1
@@ -550,21 +407,21 @@ resource "aws_elasticache_cluster" "redis" {
   security_group_ids   = [aws_security_group.elasticache.id]
 
   tags = {
-    Name = "tinyuka-eks-redis"
+    Name = "${local.app_name}-redis"
   }
 }
 
 # RDS MySQL
 resource "aws_db_instance" "mysql" {
-  identifier        = "tinyuka-eks-mysql"
+  identifier        = "${local.app_name}-mysql"
   engine            = "mysql"
   engine_version    = "8.0"
   instance_class    = "db.t3.micro"
   allocated_storage = 20
   storage_type      = "gp3"
 
-  db_name  = "tinyuka_mysql_db"
-  username = "mysql_user"
+  db_name  = local.rds_db_name
+  username = local.rds_db_user
   password = random_password.mysql_password.result
 
   vpc_security_group_ids = [aws_security_group.mysql.id]
@@ -574,13 +431,13 @@ resource "aws_db_instance" "mysql" {
   skip_final_snapshot     = true
 
   tags = {
-    Name = "tinyuka-eks-mysql"
+    Name = "${local.app_name}-mysql"
   }
 }
 
 # DynamoDB Table
 resource "aws_dynamodb_table" "main" {
-  name         = "tinyuka-dynamodb-table"
+  name         = "${local.app_name}-dynamodb-table"
   billing_mode = "PAY_PER_REQUEST"
   hash_key     = "id"
 
@@ -590,7 +447,7 @@ resource "aws_dynamodb_table" "main" {
   }
 
   tags = {
-    Name = "tinyuka-dynamodb-table"
+    Name = "${local.app_name}-dynamodb-table"
   }
 }
 
@@ -634,17 +491,17 @@ resource "kubernetes_stateful_set" "postgres" {
 
           env {
             name  = "POSTGRES_DB"
-            value = local.postgres_db_name
+            value = local.rds_db_name
           }
 
           env {
             name  = "POSTGRES_USER"
-            value = local.postgres_username
+            value = local.rds_db_user
           }
 
           env {
             name  = "POSTGRES_PASSWORD"
-            value = random_password.in_cluster_postgres_password.result
+            value = random_password.postgres_password.result
           }
 
           port {
@@ -813,22 +670,22 @@ resource "kubernetes_stateful_set" "mysql" {
 
           env {
             name  = "MYSQL_ROOT_PASSWORD"
-            value = random_password.in_cluster_mysql_password.result
+            value = random_password.mysql_password.result
           }
 
           env {
             name  = "MYSQL_DATABASE"
-            value = "tinyuka_mysql_db"
+            value = local.rds_db_name
           }
 
           env {
             name  = "MYSQL_USER"
-            value = "mysql_user"
+            value = local.rds_db_user
           }
 
           env {
             name  = "MYSQL_PASSWORD"
-            value = random_password.in_cluster_mysql_password.result
+            value = random_password.mysql_password.result
           }
 
           port {
@@ -1113,8 +970,8 @@ resource "kubernetes_config_map" "storage_configs" {
     # In-cluster PostgreSQL
     in_cluster_postgres_host     = "postgres.storage.svc.cluster.local"
     in_cluster_postgres_port     = "5432"
-    in_cluster_postgres_database = local.postgres_db_name
-    in_cluster_postgres_username = local.postgres_username
+    in_cluster_postgres_database = local.rds_db_name
+    in_cluster_postgres_username = local.rds_db_user
 
     # In-cluster MySQL
     in_cluster_mysql_host     = "mysql.storage.svc.cluster.local"
@@ -1167,12 +1024,18 @@ resource "kubernetes_secret" "storage_credentials" {
     aws_redis_url         = "redis://:${random_password.redis_password.result}@${aws_elasticache_cluster.redis.cache_nodes[0].address}:${aws_elasticache_cluster.redis.cache_nodes[0].port}"
 
     # In-cluster Passwords and Connection Strings
-    in_cluster_postgres_password = random_password.in_cluster_postgres_password.result
-    in_cluster_postgres_url      = "postgresql://${local.postgres_username}:${random_password.in_cluster_postgres_password.result}@postgres.storage.svc.cluster.local:5432/${local.postgres_db_name}"
-    in_cluster_mysql_password    = random_password.in_cluster_mysql_password.result
-    in_cluster_mysql_url         = "mysql://mysql_user:${random_password.in_cluster_mysql_password.result}@mysql.storage.svc.cluster.local:3306/tinyuka_mysql_db"
+    in_cluster_postgres_password = random_password.postgres_password.result
+    in_cluster_postgres_url      = "postgresql://${local.rds_db_user}:${random_password.postgres_password.result}@postgres.storage.svc.cluster.local:5432/${local.rds_db_name}"
+    in_cluster_mysql_password    = random_password.mysql_password.result
+    in_cluster_mysql_url         = "mysql://mysql_user:${random_password.mysql_password.result}@mysql.storage.svc.cluster.local:3306/${local.rds_db_name}"
     in_cluster_rabbitmq_password = random_password.rabbitmq_password.result
     in_cluster_rabbitmq_url      = "amqp://rabbitmq_user:${random_password.rabbitmq_password.result}@rabbitmq.storage.svc.cluster.local:5672"
+
+    # AWS DynamoDB connection info
+    aws_dynamodb_endpoint = "https://dynamodb.${var.aws_region}.amazonaws.com"
+
+    # In-cluster DynamoDB Local connection info
+    in_cluster_dynamodb_endpoint = "http://dynamodb.storage.svc.cluster.local:8000"
   }
 
   type = "Opaque"
@@ -1188,6 +1051,156 @@ resource "kubernetes_secret" "storage_credentials" {
     aws_elasticache_cluster.redis,
     aws_dynamodb_table.main
   ]
+}
+
+# AWS Load Balancer Controller IAM Role
+data "aws_iam_policy_document" "aws_load_balancer_controller_assume_role_policy" {
+  statement {
+    actions = ["sts:AssumeRoleWithWebIdentity"]
+    effect  = "Allow"
+
+    condition {
+      test     = "StringEquals"
+      variable = "${replace(aws_eks_cluster.main.identity[0].oidc[0].issuer, "https://", "")}:sub"
+      values   = ["system:serviceaccount:kube-system:aws-load-balancer-controller"]
+    }
+
+    principals {
+      identifiers = [aws_iam_openid_connect_provider.eks.arn]
+      type        = "Federated"
+    }
+  }
+
+  depends_on = [
+    aws_iam_openid_connect_provider.eks
+  ]
+}
+
+resource "aws_iam_role" "aws_load_balancer_controller" {
+  assume_role_policy = data.aws_iam_policy_document.aws_load_balancer_controller_assume_role_policy.json
+  name               = "${local.app_name}-aws-load-balancer-controller"
+  depends_on = [
+    aws_iam_openid_connect_provider.eks
+  ]
+}
+
+resource "aws_iam_policy" "aws_load_balancer_controller" {
+  name = "${local.app_name}-AWSLoadBalancerControllerIAMPolicy"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "iam:CreateServiceLinkedRole"
+        ]
+        Resource = "*"
+        Condition = {
+          StringEquals = {
+            "iam:AWSServiceName" = "elasticloadbalancing.amazonaws.com"
+          }
+        }
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "ec2:DescribeAccountAttributes",
+          "ec2:DescribeAddresses",
+          "ec2:DescribeAvailabilityZones",
+          "ec2:DescribeInternetGateways",
+          "ec2:DescribeVpcs",
+          "ec2:DescribeVpcPeeringConnections",
+          "ec2:DescribeSubnets",
+          "ec2:DescribeSecurityGroups",
+          "ec2:DescribeInstances",
+          "ec2:DescribeNetworkInterfaces",
+          "ec2:DescribeTags",
+          "ec2:GetCoipPoolUsage",
+          "ec2:GetSecurityGroupsForVpc"
+        ]
+        Resource = "*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "elasticloadbalancing:DescribeLoadBalancers",
+          "elasticloadbalancing:DescribeLoadBalancerAttributes",
+          "elasticloadbalancing:DescribeListeners",
+          "elasticloadbalancing:DescribeListenerCertificates",
+          "elasticloadbalancing:DescribeSSLPolicies",
+          "elasticloadbalancing:DescribeRules",
+          "elasticloadbalancing:DescribeTargetGroups",
+          "elasticloadbalancing:DescribeTargetGroupAttributes",
+          "elasticloadbalancing:DescribeTargetHealth",
+          "elasticloadbalancing:DescribeTags"
+        ]
+        Resource = "*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "elasticloadbalancing:CreateLoadBalancer",
+          "elasticloadbalancing:CreateTargetGroup"
+        ]
+        Resource = "*"
+        Condition = {
+          StringEquals = {
+            "elasticloadbalancing:CreateAction" = [
+              "CreateTargetGroup",
+              "CreateLoadBalancer"
+            ]
+          }
+        }
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "elasticloadbalancing:CreateListener",
+          "elasticloadbalancing:DeleteListener",
+          "elasticloadbalancing:CreateRule",
+          "elasticloadbalancing:DeleteRule"
+        ]
+        Resource = "*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "elasticloadbalancing:AddTags",
+          "elasticloadbalancing:RemoveTags"
+        ]
+        Resource = [
+          "arn:aws:elasticloadbalancing:*:*:targetgroup/*/*",
+          "arn:aws:elasticloadbalancing:*:*:loadbalancer/net/*/*",
+          "arn:aws:elasticloadbalancing:*:*:loadbalancer/app/*/*"
+        ]
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "elasticloadbalancing:RegisterTargets",
+          "elasticloadbalancing:DeregisterTargets"
+        ]
+        Resource = "arn:aws:elasticloadbalancing:*:*:targetgroup/*/*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "elasticloadbalancing:SetWebAcl",
+          "elasticloadbalancing:ModifyListener",
+          "elasticloadbalancing:AddListenerCertificates",
+          "elasticloadbalancing:RemoveListenerCertificates",
+          "elasticloadbalancing:ModifyRule"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "aws_load_balancer_controller_attach" {
+  role       = aws_iam_role.aws_load_balancer_controller.name
+  policy_arn = aws_iam_policy.aws_load_balancer_controller.arn
 }
 
 # AWS Load Balancer Controller Service Account
@@ -1234,8 +1247,8 @@ resource "helm_release" "aws_load_balancer_controller" {
 }
 
 # Developer IAM Role for EKS Read-Only Access
-resource "aws_iam_role" "eks_developer" {
-  name = "tinyuka-eks-developer-role"
+resource "aws_iam_role" "developer" {
+  name = "${local.app_name}-developer-role"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -1251,18 +1264,32 @@ resource "aws_iam_role" "eks_developer" {
   })
 
   tags = {
-    Name = "tinyuka-eks-developer-role"
+    Name = "${local.app_name}-developer-role"
   }
 }
 
-resource "aws_iam_role_policy_attachment" "eks_developer_attach" {
-  role       = aws_iam_role.eks_developer.name
-  policy_arn = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSAdminPolicy"
+resource "aws_eks_access_entry" "developer_access" {
+  cluster_name      = aws_eks_cluster.main.name
+  principal_arn     = aws_iam_role.developer.arn
+  kubernetes_groups = ["system-users"]
+  user_name         = "developer"
+}
+
+
+resource "aws_eks_access_policy_association" "developer_attachment" {
+  cluster_name  = aws_eks_cluster.main.name
+  principal_arn = aws_iam_role.developer.arn
+  policy_arn    = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSViewPolicy"
+  access_scope {
+    type = "cluster"
+  }
+
+  depends_on = [aws_eks_access_entry.developer_access]
 }
 
 # Admin IAM Role for EKS Admin Access
-resource "aws_iam_role" "eks_admin" {
-  name = "tinyuka-eks-admin-role"
+resource "aws_iam_role" "admin" {
+  name = "${local.app_name}-admin-role"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -1278,53 +1305,26 @@ resource "aws_iam_role" "eks_admin" {
   })
 
   tags = {
-    Name = "tinyuka-eks-admin-role"
+    Name = "${local.app_name}-admin-role"
   }
 }
 
-resource "aws_iam_role_policy_attachment" "eks_admin_attach" {
-  role       = aws_iam_role.eks_admin.name
-  policy_arn = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+resource "aws_eks_access_entry" "admin_access" {
+  cluster_name      = aws_eks_cluster.main.name
+  principal_arn     = aws_iam_role.admin.arn
+  kubernetes_groups = ["system-users"]
+  user_name         = "admin"
 }
 
-# Data source for current AWS identity
-data "aws_caller_identity" "current" {}
-
-# EKS Cluster ConfigMap for IAM authentication
-resource "kubernetes_config_map" "aws_auth" {
-  metadata {
-    name      = "aws-auth"
-    namespace = "kube-system"
+resource "aws_eks_access_policy_association" "admin_attachment" {
+  cluster_name  = aws_eks_cluster.main.name
+  principal_arn = aws_iam_role.admin.arn
+  policy_arn    = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+  access_scope {
+    type = "cluster"
   }
 
-  data = {
-    mapRoles = yamlencode([
-      {
-        rolearn  = aws_iam_role.eks_nodes.arn
-        username = "system:node:{{EC2PrivateDNSName}}"
-        groups   = ["system:bootstrappers", "system:nodes"]
-      },
-      {
-        rolearn  = aws_iam_role.eks_admin.arn
-        username = "admin"
-        groups   = ["system:masters"]
-      },
-      {
-        rolearn  = aws_iam_role.eks_developer.arn
-        username = "developer"
-        groups   = ["tinyuka:developers"]
-      }
-    ])
-    mapUsers = yamlencode([
-      {
-        userarn  = data.aws_caller_identity.current.arn
-        username = "admin"
-        groups   = ["system:masters"]
-      }
-    ])
-  }
-
-  depends_on = [aws_eks_node_group.main]
+  depends_on = [aws_eks_access_entry.admin_access]
 }
 
 
@@ -1357,7 +1357,7 @@ output "rds_postgres_endpoint" {
 
 output "rds_postgres_connection_string" {
   description = "RDS PostgreSQL connection string"
-  value       = "postgresql://${local.postgres_username}:${random_password.postgres_password.result}@${aws_db_instance.postgres.endpoint}/${local.postgres_db_name}"
+  value       = "postgresql://${local.rds_db_user}:${random_password.postgres_password.result}@${aws_db_instance.postgres.endpoint}/${local.rds_db_name}"
   sensitive   = true
 }
 
@@ -1390,6 +1390,33 @@ output "in_cluster_redis_service" {
 output "storage_credentials_secret" {
   description = "Kubernetes secret containing all database credentials"
   value       = "storage-credentials (in app namespace)"
+}
+
+output "dynamodb_table_name" {
+  description = "DynamoDB table name"
+  value       = aws_dynamodb_table.main.name
+}
+
+output "dynamodb_table_arn" {
+  description = "DynamoDB table ARN"
+  value       = aws_dynamodb_table.main.arn
+}
+
+output "in_cluster_dynamodb_service" {
+  description = "In-cluster DynamoDB Local service endpoint"
+  value       = "dynamodb.storage.svc.cluster.local:8000"
+}
+
+output "rds_mysql_endpoint" {
+  description = "RDS MySQL endpoint"
+  value       = aws_db_instance.mysql.endpoint
+  sensitive   = true
+}
+
+output "rds_mysql_connection_string" {
+  description = "RDS MySQL connection string"
+  value       = "mysql://${local.rds_db_user}:${random_password.mysql_password.result}@${aws_db_instance.mysql.endpoint}:3306/${local.rds_db_name}"
+  sensitive   = true
 }
 
 output "kubectl_config_command" {
