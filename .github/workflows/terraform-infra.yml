@@ -165,13 +165,5 @@ jobs:
         working-directory: ${{ env.WORKING_DIRECTORY }}
         run: |
           kubectl apply -f database/ --namespace=${{ secrets.KUBE_APP_NAMESPACE }}
-      - name: Wait for deployments to be ready
-        run: |
-          echo "Waiting for StatefulSets to be ready..."
-          kubectl wait --for=condition=ready pod -l app=postgres --timeout=300s --namespace=${{ secrets.KUBE_APP_NAMESPACE }} || true
-          kubectl wait --for=condition=ready pod -l app=redis --timeout=300s --namespace=${{ secrets.KUBE_APP_NAMESPACE }} || true
-          kubectl wait --for=condition=ready pod -l app=mysql --timeout=300s --namespace=${{ secrets.KUBE_APP_NAMESPACE }} || true
-          kubectl wait --for=condition=ready pod -l app=dynamodb --timeout=300s --namespace=${{ secrets.KUBE_APP_NAMESPACE }} || true
-          kubectl wait --for=condition=ready pod -l app=rabbitmq --timeout=300s --namespace=${{ secrets.KUBE_APP_NAMESPACE }} || true
           
           

@@ -1,5 +1,10 @@
 # Tinyuka EKS Infrastructure
 
+## Cluster Overview
+> **Name**: tinyuka-cluster
+> **Region**: eu-west-1
+> **Host Location**: https://tinyuka-mart.
+
 A comprehensive, production-ready AWS EKS infrastructure with both AWS managed services and in-cluster alternatives, built with Terraform and automated via GitHub Actions.
 
 ## 🏗️ **Cloud Architecture Overview**
@@ -76,25 +81,29 @@ A comprehensive, production-ready AWS EKS infrastructure with both AWS managed s
 - **DynamoDB**: Pay-per-request table with string hash key "id"
 
 ### **In-Cluster Services** (app namespace)
-- **PostgreSQL**: StatefulSet with 10Gi persistent storage
-- **MySQL**: StatefulSet with 10Gi persistent storage
-- **Redis**: StatefulSet with 5Gi persistent storage
-- **DynamoDB Local**: StatefulSet with 5Gi persistent storage
-- **RabbitMQ**: StatefulSet with management interface (5Gi storage)
+- **PostgreSQL**: Available via database manifest (deployed separately)
+- **MySQL**: Available via database manifest (deployed separately)
+- **Redis**: Available via database manifest (deployed separately)
+- **DynamoDB Local**: Available via database manifest (deployed separately)
+- **RabbitMQ**: Available via database manifest (deployed separately)
+
+**Note**: In-cluster services are deployed via `terraform/infra/database/manifest.yaml` as StatefulSets with persistent storage.
 
 ### **Access Control & Security**
 - **IAM Roles**:
   - **Developer Role**: `AmazonEKSViewPolicy` (read-only access via EKS access entries)
   - **Admin Role**: `AmazonEKSClusterAdminPolicy` (full admin access via EKS access entries)
+  - **DynamoDB Service Account Role**: `tinyuka-cluster-dynamodb-service-account-role` (CRUD access to DynamoDB)
 - **EKS Access Entries**: Modern IAM-to-Kubernetes access mapping
 - **Authentication Mode**: API_AND_CONFIG_MAP for backward compatibility
 - **Service Accounts**: IRSA-enabled for AWS service integration
 
 ### **Configuration Management**
-- **database ConfigMap**: Non-sensitive connection details (hosts, ports, usernames, table names)
+- **database ConfigMap**: Non-sensitive connection details (32+ configuration values including hosts, ports, usernames, table names, DynamoDB role ARN)
 - **database Secret**: Sensitive data (passwords, connection URLs, endpoints)
 - **Random Password Generation**: Secure 16-character passwords (no special characters for compatibility)
 - **Comprehensive DynamoDB Support**: Both AWS and in-cluster endpoints configured
+- **DynamoDB IRSA**: Service account role ARN available in ConfigMap for seamless pod integration
 
 ## 🚀 **Deployment Instructions**
 
@@ -180,7 +189,7 @@ aws iam put-user-policy --user-name eks-developer --policy-name AssumeEKSDevelop
     {
       "Effect": "Allow",
       "Action": "sts:AssumeRole",
-      "Resource": "arn:aws:iam::YOUR-ACCOUNT-ID:role/tinyuka-eks-developer-role"
+      "Resource": "arn:aws:iam::YOUR-ACCOUNT-ID:role/tinyuka-cluster-developer-role"
     }
   ]
 }'
@@ -197,9 +206,9 @@ aws configure --profile eks-developer
 # Configure kubectl using the developer profile
 aws eks update-kubeconfig \
   --region eu-west-1 \
-  --name tinyuka-tinyuka-eks-cluster \
+  --name tinyuka-cluster \
   --profile eks-developer \
-  --role-arn arn:aws:iam::YOUR-ACCOUNT-ID:role/tinyuka-eks-developer-role
+  --role-arn arn:aws:iam::YOUR-ACCOUNT-ID:role/tinyuka-cluster-developer-role
 ```
 
 #### **Manual kubectl Configuration**
@@ -215,9 +224,9 @@ kubectl config set-credentials developer \
   --exec-arg=eks \
   --exec-arg=get-token \
   --exec-arg=--cluster-name \
-  --exec-arg=tinyuka-tinyuka-eks-cluster \
+  --exec-arg=tinyuka-cluster \
   --exec-arg=--role \
-  --exec-arg=arn:aws:iam::YOUR-ACCOUNT-ID:role/tinyuka-eks-developer-role
+  --exec-arg=arn:aws:iam::YOUR-ACCOUNT-ID:role/tinyuka-cluster-developer-role
 
 kubectl config set-context developer-context \
   --cluster=tinyuka-cluster \
@@ -244,6 +253,60 @@ kubectl apply -f deployment.yaml     # ❌ Should fail
 
 ## 📦 **Application Integration**
 
+### **DynamoDB Access with IRSA (IAM Roles for Service Accounts)**
+
+The infrastructure provides secure DynamoDB access using IRSA. The DynamoDB service account role ARN is available in the ConfigMap for easy reference:
+
+```yaml
+# First, get the role ARN from the ConfigMap
+# kubectl get configmap database -n app -o jsonpath='{.data.aws_dynamodb_service_account_role_arn}'
+
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: my-dynamodb-service-account
+  namespace: app
+  annotations:
+    eks.amazonaws.com/role-arn: "arn:aws:iam::YOUR-ACCOUNT-ID:role/tinyuka-cluster-dynamodb-service-account-role"
+    # Note: Replace with actual ARN from ConfigMap above
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-dynamodb-app
+  namespace: app
+spec:
+  selector:
+    matchLabels:
+      app: my-dynamodb-app
+  template:
+    metadata:
+      labels:
+        app: my-dynamodb-app
+    spec:
+      serviceAccountName: my-dynamodb-service-account
+      containers:
+      - name: app
+        image: my-app:latest
+        env:
+        - name: DYNAMODB_TABLE_NAME
+          valueFrom:
+            configMapKeyRef:
+              name: database
+              key: aws_dynamodb_table_name
+        - name: AWS_REGION
+          valueFrom:
+            configMapKeyRef:
+              name: database
+              key: aws_dynamodb_region
+        # AWS SDK will automatically use IRSA credentials
+```
+
+**Permissions Granted:**
+- `dynamodb:GetItem`, `dynamodb:PutItem`, `dynamodb:Query`, `dynamodb:Scan`
+- `dynamodb:UpdateItem`, `dynamodb:DeleteItem`, `dynamodb:BatchGetItem`, `dynamodb:BatchWriteItem`
+- `dynamodb:ConditionCheckItem`, `dynamodb:DescribeTable`, `dynamodb:DescribeTimeToLive`
+
 ### **Using Database Credentials in Applications**
 
 #### **Environment Variables from Secret**
@@ -254,7 +317,13 @@ metadata:
   name: my-app
   namespace: app
 spec:
+  selector:
+    matchLabels:
+      app: my-app
   template:
+    metadata:
+      labels:
+        app: my-app
     spec:
       containers:
       - name: app
@@ -281,6 +350,16 @@ spec:
             secretKeyRef:
               name: database
               key: aws_dynamodb_endpoint
+        - name: DYNAMODB_TABLE_NAME
+          valueFrom:
+            configMapKeyRef:
+              name: database
+              key: aws_dynamodb_table_name
+        - name: AWS_REGION
+          valueFrom:
+            configMapKeyRef:
+              name: database
+              key: aws_dynamodb_region
 
         # In-Cluster Services
         - name: CLUSTER_POSTGRES_URL
@@ -288,6 +367,11 @@ spec:
             secretKeyRef:
               name: database
               key: in_cluster_postgres_url
+        - name: CLUSTER_MYSQL_URL
+          valueFrom:
+            secretKeyRef:
+              name: database
+              key: in_cluster_mysql_url
         - name: CLUSTER_RABBITMQ_URL
           valueFrom:
             secretKeyRef:
@@ -298,6 +382,11 @@ spec:
             secretKeyRef:
               name: database
               key: in_cluster_dynamodb_endpoint
+        - name: CLUSTER_REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: database
+              key: in_cluster_redis_url
 ```
 
 #### **Using ConfigMap for Non-Sensitive Data**
@@ -308,7 +397,13 @@ metadata:
   name: my-app
   namespace: app
 spec:
+  selector:
+    matchLabels:
+      app: my-app
   template:
+    metadata:
+      labels:
+        app: my-app
     spec:
       containers:
       - name: app
@@ -345,9 +440,9 @@ kubectl get pods --all-namespaces
 # Check AWS Load Balancer Controller
 kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller
 
-# Verify in-cluster services
-kubectl get statefulsets -n storage
-kubectl get services -n storage
+# Verify in-cluster services (deployed via database manifest)
+kubectl get statefulsets -n app
+kubectl get services -n app
 ```
 
 ### **Access Service Endpoints**
@@ -356,13 +451,13 @@ kubectl get services -n storage
 terraform output rds_postgres_endpoint
 terraform output elasticache_redis_endpoint
 
-# In-cluster Service DNS
-# PostgreSQL: postgres.storage.svc.cluster.local:5432
-# MySQL: mysql.storage.svc.cluster.local:3306
-# Redis: redis.storage.svc.cluster.local:6379
-# DynamoDB Local: dynamodb.storage.svc.cluster.local:8000
-# RabbitMQ: rabbitmq.storage.svc.cluster.local:5672 (AMQP)
-# RabbitMQ Management: rabbitmq.storage.svc.cluster.local:15672 (HTTP)
+# In-cluster Service DNS (when database manifest is deployed)
+# PostgreSQL: postgres.app.svc.cluster.local:5432
+# MySQL: mysql.app.svc.cluster.local:3306
+# Redis: redis.app.svc.cluster.local:6379
+# DynamoDB Local: dynamodb.app.svc.cluster.local:8000
+# RabbitMQ: rabbitmq.app.svc.cluster.local:5672 (AMQP)
+# RabbitMQ Management: rabbitmq.app.svc.cluster.local:15672 (HTTP)
 ```
 
 ## 📊 **Cost Optimization**

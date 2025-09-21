@@ -1,0 +1,75 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: app
+  labels:
+    name: app
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: checkout
+  namespace: app
+  labels:
+    app: checkout
+spec:
+  selector:
+    app: checkout
+  ports:
+    - port: 8080
+      targetPort: 8080
+      protocol: TCP
+  type: ClusterIP
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: checkout
+  namespace: app
+  labels:
+    app: checkout
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: checkout
+  template:
+    metadata:
+      labels:
+        app: checkout
+    spec:
+      containers:
+        - name: checkout
+          image: public.ecr.aws/aws-containers/retail-store-sample-checkout:1.3.0
+          ports:
+            - containerPort: 8080
+          env:
+            - name: PORT
+              value: '8080'
+            - name: RETAIL_CHECKOUT_PERSISTENCE_PROVIDER
+              value: in-memory
+            - name: RETAIL_CHECKOUT_PERSISTENCE_REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: database
+                  key: in_cluster_redis_url
+            - name: RETAIL_CHECKOUT_ENDPOINTS_ORDERS
+              value: 'http://orders.app'
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 60
+            periodSeconds: 10
+            timeoutSeconds: 10
+            failureThreshold: 3
