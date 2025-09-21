@@ -14,6 +14,8 @@ metadata:
       }}
     alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:eu-west-1:396768595839:certificate/4a27bba5-f791-42a3-a555-08d9598c97a2
     alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/healthcheck-path: /actuator/health
+    alb.ingress.kubernetes.io/healthcheck-port: traffic-port
 spec:
   ingressClassName: alb
   rules:

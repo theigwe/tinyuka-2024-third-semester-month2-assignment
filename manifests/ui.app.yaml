@@ -40,7 +40,7 @@ spec:
     spec:
       containers:
         - name: ui
-          image: public.ecr.aws/aws-containers/retail-store-sample-ui:1.2.4
+          image: public.ecr.aws/aws-containers/retail-store-sample-ui:1.3.0-amd64
           ports:
             - containerPort: 8080
           env:
@@ -51,26 +51,30 @@ spec:
             - name: RETAIL_UI_DISABLE_DEMO_WARNINGS
               value: 'false'
             - name: RETAIL_UI_ENDPOINTS_CATALOG
-              value: 'http://catalog.app'
+              value: 'http://catalog.app.svc.cluster.local:8080'
             - name: RETAIL_UI_ENDPOINTS_CARTS
-              value: 'http://cart.app'
+              value: 'http://cart.app.svc.cluster.local:8080'
             - name: RETAIL_UI_ENDPOINTS_ORDERS
-              value: 'http://orders.app'
+              value: 'http://orders.app.svc.cluster.local:8080'
             - name: RETAIL_UI_ENDPOINTS_CHECKOUT
-              value: 'http://checkout.app'
+              value: 'http://checkout.app.svc.cluster.local:8080'
+            - name: SERVER_TOMCAT_ACCESSLOG_ENABLED
+              value: 'true'
+            - name: AWS_REGION
+              value: 'eu-west-1'
           readinessProbe:
             httpGet:
-              path: /health
+              path: /actuator/health
               port: 8080
             initialDelaySeconds: 60
             periodSeconds: 30
-            timeoutSeconds: 10
+            timeoutSeconds: 30
             failureThreshold: 5
           livenessProbe:
             httpGet:
-              path: /health
+              path: /actuator/health
               port: 8080
             initialDelaySeconds: 60
-            periodSeconds: 10
-            timeoutSeconds: 10
+            periodSeconds: 30
+            timeoutSeconds: 30
             failureThreshold: 3
