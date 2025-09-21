@@ -1,0 +1,105 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: app
+  labels:
+    name: app
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: orders
+  namespace: app
+  labels:
+    app: orders
+spec:
+  selector:
+    app: orders
+  ports:
+    - port: 8080
+      targetPort: 8080
+      protocol: TCP
+  type: ClusterIP
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: orders
+  namespace: app
+  labels:
+    app: orders
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: orders
+  template:
+    metadata:
+      labels:
+        app: orders
+    spec:
+      containers:
+        - name: orders
+          image: public.ecr.aws/aws-containers/retail-store-sample-orders:1.3.0
+          ports:
+            - containerPort: 8080
+          env:
+            - name: PORT
+              value: '8080'
+            - name: RETAIL_CHECKOUT_PERSISTENCE_PROVIDER
+              value: in-memory
+            - name: RETAIL_ORDERS_PERSISTENCE_ENDPOINT
+              valueFrom:
+                configMapKeyRef:
+                  name: database
+                  key: in_cluster_postgres_endpoint
+            - name: RETAIL_ORDERS_PERSISTENCE_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: database
+                  key: in_cluster_postgres_database
+            - name: RETAIL_ORDERS_PERSISTENCE_USERNAME
+              valueFrom:
+                configMapKeyRef:
+                  name: database
+                  key: in_cluster_postgres_username
+            - name: RETAIL_ORDERS_PERSISTENCE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: database
+                  key: in_cluster_postgres_password
+            - name: RETAIL_ORDERS_MESSAGING_PROVIDER
+              value: in-memory
+            - name: RETAIL_ORDERS_MESSAGING_RABBITMQ_ADDRESSES
+              valueFrom:
+                configMapKeyRef:
+                  name: database
+                  key: in_cluster_rabbitmq_endpoint
+            - name: RETAIL_ORDERS_MESSAGING_RABBITMQ_USERNAME
+              valueFrom:
+                configMapKeyRef:
+                  name: database
+                  key: in_cluster_rabbitmq_username
+            - name: RETAIL_ORDERS_MESSAGING_RABBITMQ_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: database
+                  key: in_cluster_rabbitmq_password
+          readinessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8080
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 30
+            failureThreshold: 5
+          livenessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8080
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 30
+            failureThreshold: 3

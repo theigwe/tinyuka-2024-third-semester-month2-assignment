@@ -1,0 +1,96 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: app
+  labels:
+    name: app
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cart
+  namespace: app
+  labels:
+    app: cart
+spec:
+  selector:
+    app: cart
+  ports:
+    - port: 8080
+      targetPort: 8080
+      protocol: TCP
+  type: ClusterIP
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cart
+  namespace: app
+  labels:
+    app: cart
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cart
+  template:
+    metadata:
+      labels:
+        app: cart
+    spec:
+      serviceAccountName: my-dynamodb-service-account
+      containers:
+        - name: cart
+          image: public.ecr.aws/aws-containers/retail-store-sample-cart:1.3.0
+          ports:
+            - containerPort: 8080
+          env:
+            - name: PORT
+              value: '8080'
+            - name: RETAIL_CART_PERSISTENCE_PROVIDER
+              value: in-memory
+            - name: RETAIL_CART_PERSISTENCE_DYNAMODB_TABLE_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: database
+                  key: aws_dynamodb_table_name
+            - name: RETAIL_CART_PERSISTENCE_DYNAMODB_CREATE_TABLE
+              value: 'true'
+            - name: RETAIL_CART_PERSISTENCE_DYNAMODB_ENDPOINT
+              valueFrom:
+                secretKeyRef:
+                  name: database
+                  key: in_cluster_dynamodb_endpoint
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: dynamo-access-config
+                  key: access_key_id
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: dynamo-access-config
+                  key: access_secret_key
+            - name: AWS_REGION
+              valueFrom:
+                configMapKeyRef:
+                  name: database
+                  key: aws_dynamodb_region
+
+          readinessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8080
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 30
+            failureThreshold: 5
+          livenessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8080
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 30
+            failureThreshold: 3

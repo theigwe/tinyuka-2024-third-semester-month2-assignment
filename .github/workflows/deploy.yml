@@ -1,0 +1,42 @@
+name: Deploy Applications Using Kubernetes Manifests
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'manifests/**'
+jobs:
+  deploy-apps:
+    environment: dev
+    name: Deploy Applications
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ secrets.AWS_REGION }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'v1.28.0'
+      - name: Update kubeconfig
+        run: |
+          aws eks update-kubeconfig --region ${{ secrets.AWS_REGION }} --name ${{ secrets.TF_CLUSTER_NAME }}
+      - name: Verify cluster connection
+        run: |
+          kubectl cluster-info
+          kubectl get nodes
+      - name: Create DynoDB Kubernetes Secret
+        run: |
+          kubectl create secret generic dynamo-access-config \
+            --from-literal=access_key_id=${{ secrets.DYNAMO_AWS_ACCESS_KEY_ID }} \
+            --from-literal=access_secret_key=${{ secrets.DYNAMO_AWS_SECRET_ACCESS_KEY }} \
+            --namespace=${{ secrets.KUBE_APP_NAMESPACE }} \
+            --dry-run=client -o yaml | kubectl apply -f -
+      - name: Deploy Kubernetes manifests
+        run: |
+          kubectl apply -f manifests/ --namespace=${{ secrets.KUBE_APP_NAMESPACE }}

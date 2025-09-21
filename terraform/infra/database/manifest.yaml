@@ -5,7 +5,6 @@ metadata:
   name: app
   labels:
     name: app
-
 ---
 # Postgres StatefulSet
 apiVersion: apps/v1
@@ -48,6 +47,7 @@ spec:
           volumeMounts:
             - name: postgres-storage
               mountPath: /var/lib/postgresql/data
+              subPath: pgdata  # This creates /var/lib/postgresql/data/pgdata
   volumeClaimTemplates:
     - metadata:
         name: postgres-storage
@@ -56,7 +56,6 @@ spec:
         resources:
           requests:
             storage: 10Gi
-
 ---
 # Postgres Service
 apiVersion: v1
@@ -71,7 +70,6 @@ spec:
     - port: 5432
       targetPort: 5432
   type: ClusterIP
-
 ---
 # Redis StatefulSet
 apiVersion: apps/v1
@@ -106,7 +104,6 @@ spec:
         resources:
           requests:
             storage: 5Gi
-
 ---
 # Redis Service
 apiVersion: v1
@@ -121,7 +118,6 @@ spec:
     - port: 6379
       targetPort: 6379
   type: ClusterIP
-
 ---
 # MySQL StatefulSet
 apiVersion: apps/v1
@@ -142,7 +138,7 @@ spec:
     spec:
       containers:
         - name: mysql
-          image: mysql:8.0
+          image: mysql:5.7
           ports:
             - containerPort: 3306
           env:
@@ -169,6 +165,8 @@ spec:
           volumeMounts:
             - name: mysql-storage
               mountPath: /var/lib/mysql
+              subPath: mysql-data  # This creates /var/lib/mysql/mysql-data
+
   volumeClaimTemplates:
     - metadata:
         name: mysql-storage
@@ -177,7 +175,6 @@ spec:
         resources:
           requests:
             storage: 10Gi
-
 ---
 # MySQL Service
 apiVersion: v1
@@ -192,7 +189,6 @@ spec:
     - port: 3306
       targetPort: 3306
   type: ClusterIP
-
 ---
 # DynamoDB StatefulSet
 apiVersion: apps/v1
@@ -233,7 +229,6 @@ spec:
         resources:
           requests:
             storage: 5Gi
-
 ---
 # DynamoDB Service
 apiVersion: v1
@@ -248,7 +243,6 @@ spec:
     - port: 8000
       targetPort: 8000
   type: ClusterIP
-
 ---
 # RabbitMQ StatefulSet
 apiVersion: apps/v1
@@ -297,7 +291,6 @@ spec:
         resources:
           requests:
             storage: 5Gi
-
 ---
 # RabbitMQ Service
 apiVersion: v1
