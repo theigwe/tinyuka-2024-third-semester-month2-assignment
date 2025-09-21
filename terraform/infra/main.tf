@@ -113,8 +113,8 @@ resource "aws_vpc" "main" {
   enable_dns_support   = true
 
   tags = {
-    Name                                = "${local.app_name}-vpc"
-    "kubernetes.io/cluster/eks-cluster" = "shared"
+    Name                                        = "${local.app_name}-vpc"
+    "kubernetes.io/cluster/${var.cluster_name}" = "shared"
   }
 }
 
@@ -136,9 +136,9 @@ resource "aws_subnet" "public" {
   map_public_ip_on_launch = true
 
   tags = {
-    Name                                = "${local.app_name}-public-subnet-${count.index + 1}"
-    "kubernetes.io/cluster/eks-cluster" = "shared"
-    "kubernetes.io/role/elb"            = "1"
+    Name                                        = "${local.app_name}-public-subnet-${count.index + 1}"
+    "kubernetes.io/cluster/${var.cluster_name}" = "shared"
+    "kubernetes.io/role/elb"                    = "1"
   }
 }
 
@@ -202,19 +202,22 @@ resource "aws_security_group" "eks_nodes" {
   }
 }
 
-resource "aws_security_group" "rds" {
+resource "aws_security_group" "postgres" {
   name_prefix = "${local.app_name}-rds-"
   vpc_id      = aws_vpc.main.id
 
   ingress {
-    from_port       = 5432
-    to_port         = 5432
-    protocol        = "tcp"
-    security_groups = [aws_security_group.eks_nodes.id]
+    from_port = 5432
+    to_port   = 5432
+    protocol  = "tcp"
+    security_groups = [
+      aws_security_group.eks_cluster.id,
+      aws_security_group.eks_nodes.id
+    ]
   }
 
   tags = {
-    Name = "${local.app_name}-rds-sg"
+    Name = "${local.app_name}-postgres-sg"
   }
 }
 
@@ -223,10 +226,13 @@ resource "aws_security_group" "elasticache" {
   vpc_id      = aws_vpc.main.id
 
   ingress {
-    from_port       = 6379
-    to_port         = 6379
-    protocol        = "tcp"
-    security_groups = [aws_security_group.eks_nodes.id]
+    from_port = 6379
+    to_port   = 6379
+    protocol  = "tcp"
+    security_groups = [
+      aws_security_group.eks_cluster.id,
+      aws_security_group.eks_nodes.id
+    ]
   }
 
   tags = {
@@ -239,10 +245,13 @@ resource "aws_security_group" "mysql" {
   vpc_id      = aws_vpc.main.id
 
   ingress {
-    from_port       = 3306
-    to_port         = 3306
-    protocol        = "tcp"
-    security_groups = [aws_security_group.eks_nodes.id]
+    from_port = 3306
+    to_port   = 3306
+    protocol  = "tcp"
+    security_groups = [
+      aws_security_group.eks_cluster.id,
+      aws_security_group.eks_nodes.id
+    ]
   }
 
   tags = {
@@ -389,7 +398,7 @@ resource "aws_db_instance" "postgres" {
   username = local.rds_db_user
   password = random_password.postgres_password.result
 
-  vpc_security_group_ids = [aws_security_group.rds.id]
+  vpc_security_group_ids = [aws_security_group.postgres.id]
   db_subnet_group_name   = aws_db_subnet_group.main.name
 
   backup_retention_period = 0
@@ -462,485 +471,6 @@ resource "aws_dynamodb_table" "main" {
   }
 }
 
-# Kubernetes Resources
-# resource "kubernetes_namespace" "storage" {
-#   metadata {
-#     name = "storage"
-#   }
-#
-#   depends_on = [aws_eks_node_group.main]
-# }
-
-# In-cluster PostgreSQL StatefulSet
-# resource "kubernetes_stateful_set" "postgres" {
-#   metadata {
-#     name      = "postgres"
-#     namespace = kubernetes_namespace.storage.metadata[0].name
-#   }
-#
-#   spec {
-#     service_name = "postgres"
-#     replicas     = 1
-#
-#     selector {
-#       match_labels = {
-#         app = "postgres"
-#       }
-#     }
-#
-#     template {
-#       metadata {
-#         labels = {
-#           app = "postgres"
-#         }
-#       }
-#
-#       spec {
-#         container {
-#           name  = "postgres"
-#           image = "postgres:15"
-#
-#           env {
-#             name  = "POSTGRES_DB"
-#             value = local.rds_db_name
-#           }
-#
-#           env {
-#             name  = "POSTGRES_USER"
-#             value = local.rds_db_user
-#           }
-#
-#           env {
-#             name  = "POSTGRES_PASSWORD"
-#             value = random_password.postgres_password.result
-#           }
-#
-#           port {
-#             container_port = 5432
-#           }
-#
-#           volume_mount {
-#             name       = "postgres-storage"
-#             mount_path = "/var/lib/postgresql/data"
-#           }
-#         }
-#       }
-#     }
-#
-#     volume_claim_template {
-#       metadata {
-#         name = "postgres-storage"
-#       }
-#
-#       spec {
-#         access_modes = ["ReadWriteOnce"]
-#         resources {
-#           requests = {
-#             storage = "10Gi"
-#           }
-#         }
-#       }
-#     }
-#   }
-#
-#   depends_on = [kubernetes_namespace.storage]
-# }
-#
-# resource "kubernetes_service" "postgres" {
-#   metadata {
-#     name      = "postgres"
-#     namespace = kubernetes_namespace.storage.metadata[0].name
-#   }
-#
-#   spec {
-#     selector = {
-#       app = "postgres"
-#     }
-#
-#     port {
-#       port        = 5432
-#       target_port = 5432
-#     }
-#
-#     type = "ClusterIP"
-#   }
-#
-#   depends_on = [kubernetes_stateful_set.postgres]
-# }
-
-# In-cluster Redis StatefulSet
-# resource "kubernetes_stateful_set" "redis" {
-#   metadata {
-#     name      = "redis"
-#     namespace = kubernetes_namespace.storage.metadata[0].name
-#   }
-#
-#   spec {
-#     service_name = "redis"
-#     replicas     = 1
-#
-#     selector {
-#       match_labels = {
-#         app = "redis"
-#       }
-#     }
-#
-#     template {
-#       metadata {
-#         labels = {
-#           app = "redis"
-#         }
-#       }
-#
-#       spec {
-#         container {
-#           name  = "redis"
-#           image = "redis:7-alpine"
-#
-#           port {
-#             container_port = 6379
-#           }
-#
-#           volume_mount {
-#             name       = "redis-storage"
-#             mount_path = "/data"
-#           }
-#         }
-#       }
-#     }
-#
-#     volume_claim_template {
-#       metadata {
-#         name = "redis-storage"
-#       }
-#
-#       spec {
-#         access_modes = ["ReadWriteOnce"]
-#         resources {
-#           requests = {
-#             storage = "5Gi"
-#           }
-#         }
-#       }
-#     }
-#   }
-#
-#   depends_on = [kubernetes_namespace.storage]
-# }
-#
-# resource "kubernetes_service" "redis" {
-#   metadata {
-#     name      = "redis"
-#     namespace = kubernetes_namespace.storage.metadata[0].name
-#   }
-#
-#   spec {
-#     selector = {
-#       app = "redis"
-#     }
-#
-#     port {
-#       port        = 6379
-#       target_port = 6379
-#     }
-#
-#     type = "ClusterIP"
-#   }
-#
-#   depends_on = [kubernetes_stateful_set.redis]
-# }
-
-# In-cluster MySQL StatefulSet
-# resource "kubernetes_stateful_set" "mysql" {
-#   metadata {
-#     name      = "mysql"
-#     namespace = kubernetes_namespace.storage.metadata[0].name
-#   }
-#
-#   spec {
-#     service_name = "mysql"
-#     replicas     = 1
-#
-#     selector {
-#       match_labels = {
-#         app = "mysql"
-#       }
-#     }
-#
-#     template {
-#       metadata {
-#         labels = {
-#           app = "mysql"
-#         }
-#       }
-#
-#       spec {
-#         container {
-#           name  = "mysql"
-#           image = "mysql:8.0"
-#
-#           env {
-#             name  = "MYSQL_ROOT_PASSWORD"
-#             value = random_password.mysql_password.result
-#           }
-#
-#           env {
-#             name  = "MYSQL_DATABASE"
-#             value = local.rds_db_name
-#           }
-#
-#           env {
-#             name  = "MYSQL_USER"
-#             value = local.rds_db_user
-#           }
-#
-#           env {
-#             name  = "MYSQL_PASSWORD"
-#             value = random_password.mysql_password.result
-#           }
-#
-#           port {
-#             container_port = 3306
-#           }
-#
-#           volume_mount {
-#             name       = "mysql-storage"
-#             mount_path = "/var/lib/mysql"
-#           }
-#         }
-#       }
-#     }
-#
-#     volume_claim_template {
-#       metadata {
-#         name = "mysql-storage"
-#       }
-#
-#       spec {
-#         access_modes = ["ReadWriteOnce"]
-#         resources {
-#           requests = {
-#             storage = "10Gi"
-#           }
-#         }
-#       }
-#     }
-#   }
-#
-#   depends_on = [kubernetes_namespace.storage]
-# }
-#
-# resource "kubernetes_service" "mysql" {
-#   metadata {
-#     name      = "mysql"
-#     namespace = kubernetes_namespace.storage.metadata[0].name
-#   }
-#
-#   spec {
-#     selector = {
-#       app = "mysql"
-#     }
-#
-#     port {
-#       port        = 3306
-#       target_port = 3306
-#     }
-#
-#     type = "ClusterIP"
-#   }
-#
-#   depends_on = [kubernetes_stateful_set.mysql]
-# }
-
-# In-cluster DynamoDB Local StatefulSet
-# resource "kubernetes_stateful_set" "dynamodb" {
-#   metadata {
-#     name      = "dynamodb"
-#     namespace = kubernetes_namespace.storage.metadata[0].name
-#   }
-#
-#   spec {
-#     service_name = "dynamodb"
-#     replicas     = 1
-#
-#     selector {
-#       match_labels = {
-#         app = "dynamodb"
-#       }
-#     }
-#
-#     template {
-#       metadata {
-#         labels = {
-#           app = "dynamodb"
-#         }
-#       }
-#
-#       spec {
-#         container {
-#           name  = "dynamodb"
-#           image = "amazon/dynamodb-local:latest"
-#
-#           args = ["-jar", "DynamoDBLocal.jar", "-sharedDb", "-dbPath", "/data"]
-#
-#           port {
-#             container_port = 8000
-#           }
-#
-#           volume_mount {
-#             name       = "dynamodb-storage"
-#             mount_path = "/data"
-#           }
-#         }
-#       }
-#     }
-#
-#     volume_claim_template {
-#       metadata {
-#         name = "dynamodb-storage"
-#       }
-#
-#       spec {
-#         access_modes = ["ReadWriteOnce"]
-#         resources {
-#           requests = {
-#             storage = "5Gi"
-#           }
-#         }
-#       }
-#     }
-#   }
-#
-#   depends_on = [kubernetes_namespace.storage]
-# }
-#
-# resource "kubernetes_service" "dynamodb" {
-#   metadata {
-#     name      = "dynamodb"
-#     namespace = kubernetes_namespace.storage.metadata[0].name
-#   }
-#
-#   spec {
-#     selector = {
-#       app = "dynamodb"
-#     }
-#
-#     port {
-#       port        = 8000
-#       target_port = 8000
-#     }
-#
-#     type = "ClusterIP"
-#   }
-#
-#   depends_on = [kubernetes_stateful_set.dynamodb]
-# }
-
-# In-cluster RabbitMQ StatefulSet
-# resource "kubernetes_stateful_set" "rabbitmq" {
-#   metadata {
-#     name      = "rabbitmq"
-#     namespace = kubernetes_namespace.storage.metadata[0].name
-#   }
-#
-#   spec {
-#     service_name = "rabbitmq"
-#     replicas     = 1
-#
-#     selector {
-#       match_labels = {
-#         app = "rabbitmq"
-#       }
-#     }
-#
-#     template {
-#       metadata {
-#         labels = {
-#           app = "rabbitmq"
-#         }
-#       }
-#
-#       spec {
-#         container {
-#           name  = "rabbitmq"
-#           image = "rabbitmq:3.12-management-alpine"
-#
-#           env {
-#             name  = "RABBITMQ_DEFAULT_USER"
-#             value = "rabbitmq_user"
-#           }
-#
-#           env {
-#             name  = "RABBITMQ_DEFAULT_PASS"
-#             value = random_password.rabbitmq_password.result
-#           }
-#
-#           port {
-#             container_port = 5672
-#             name           = "amqp"
-#           }
-#
-#           port {
-#             container_port = 15672
-#             name           = "management"
-#           }
-#
-#           volume_mount {
-#             name       = "rabbitmq-storage"
-#             mount_path = "/var/lib/rabbitmq"
-#           }
-#         }
-#       }
-#     }
-#
-#     volume_claim_template {
-#       metadata {
-#         name = "rabbitmq-storage"
-#       }
-#
-#       spec {
-#         access_modes = ["ReadWriteOnce"]
-#         resources {
-#           requests = {
-#             storage = "5Gi"
-#           }
-#         }
-#       }
-#     }
-#   }
-#
-#   depends_on = [kubernetes_namespace.storage]
-# }
-#
-# resource "kubernetes_service" "rabbitmq" {
-#   metadata {
-#     name      = "rabbitmq"
-#     namespace = kubernetes_namespace.storage.metadata[0].name
-#   }
-#
-#   spec {
-#     selector = {
-#       app = "rabbitmq"
-#     }
-#
-#     port {
-#       port        = 5672
-#       target_port = 5672
-#       name        = "amqp"
-#     }
-#
-#     port {
-#       port        = 15672
-#       target_port = 15672
-#       name        = "management"
-#     }
-#
-#     type = "ClusterIP"
-#   }
-#
-#   depends_on = [kubernetes_stateful_set.rabbitmq]
-# }
-
 # App Namespace
 resource "kubernetes_namespace" "app" {
   metadata {
@@ -963,12 +493,14 @@ resource "kubernetes_config_map" "storage_config" {
     aws_postgres_host     = aws_db_instance.postgres.address
     aws_postgres_database = aws_db_instance.postgres.db_name
     aws_postgres_username = aws_db_instance.postgres.username
+    aws_postgres_endpoint = aws_db_instance.postgres.endpoint
 
     # AWS RDS MySQL
     aws_mysql_port     = "3306"
     aws_mysql_host     = aws_db_instance.mysql.address
     aws_mysql_database = aws_db_instance.mysql.db_name
     aws_mysql_username = aws_db_instance.mysql.username
+    aws_mysql_endpoint = aws_db_instance.mysql.endpoint
 
     # AWS ElastiCache Redis
     aws_redis_host = aws_elasticache_cluster.redis.cache_nodes[0].address
@@ -983,12 +515,14 @@ resource "kubernetes_config_map" "storage_config" {
     in_cluster_postgres_database = local.rds_db_name
     in_cluster_postgres_username = local.rds_db_user
     in_cluster_postgres_host     = "postgres.${var.app_namespace}.svc.cluster.local"
+    in_cluster_postgres_endpoint = "postgres.${var.app_namespace}.svc.cluster.local:5432"
 
     # In-cluster MySQL
-    in_cluster_mysql_host     = "mysql.${var.app_namespace}.svc.cluster.local"
     in_cluster_mysql_port     = "3306"
     in_cluster_mysql_database = local.rds_db_name
     in_cluster_mysql_username = local.rds_db_user
+    in_cluster_mysql_host     = "mysql.${var.app_namespace}.svc.cluster.local"
+    in_cluster_mysql_endpoint = "mysql.${var.app_namespace}.svc.cluster.local:3306"
 
     # In-cluster Redis
     in_cluster_redis_port = "6379"
@@ -997,14 +531,13 @@ resource "kubernetes_config_map" "storage_config" {
 
     # In-cluster DynamoDB Local
     in_cluster_dynamodb_port = "8000"
-    in_cluster_dynamodb_host = "dynamodb.${var.app_namespace}.svc.cluster.local"
 
     # In-cluster RabbitMQ
-
     in_cluster_rabbitmq_port            = "5672"
     in_cluster_rabbitmq_management_port = "15672"
     in_cluster_rabbitmq_username        = local.rabbitmq_user
     in_cluster_rabbitmq_host            = "rabbitmq.${var.app_namespace}.svc.cluster.local"
+    in_cluster_rabbitmq_endpoint        = "rabbitmq.${var.app_namespace}.svc.cluster.local:5672"
   }
 
   depends_on = [
@@ -1027,7 +560,7 @@ resource "kubernetes_secret" "storage_credentials" {
     aws_postgres_password = random_password.postgres_password.result
     aws_postgres_url      = "postgresql://${aws_db_instance.postgres.username}:${random_password.postgres_password.result}@${aws_db_instance.postgres.endpoint}/${aws_db_instance.postgres.db_name}"
     aws_mysql_password    = random_password.mysql_password.result
-    aws_mysql_url         = "mysql://${aws_db_instance.mysql.username}:${random_password.mysql_password.result}@${aws_db_instance.mysql.endpoint}:3306/${aws_db_instance.mysql.db_name}"
+    aws_mysql_url         = "mysql://${aws_db_instance.mysql.username}:${random_password.mysql_password.result}@${aws_db_instance.mysql.endpoint}/${aws_db_instance.mysql.db_name}"
     aws_redis_password    = random_password.redis_password.result
     aws_redis_url         = "redis://:${random_password.redis_password.result}@${aws_elasticache_cluster.redis.cache_nodes[0].address}:${aws_elasticache_cluster.redis.cache_nodes[0].port}"
 
@@ -1038,11 +571,13 @@ resource "kubernetes_secret" "storage_credentials" {
     in_cluster_mysql_url         = "mysql://${local.rds_db_user}:${random_password.mysql_password.result}@mysql.${var.app_namespace}.svc.cluster.local:3306/${local.rds_db_name}"
     in_cluster_rabbitmq_password = random_password.rabbitmq_password.result
     in_cluster_rabbitmq_url      = "amqp://${local.rabbitmq_user}:${random_password.rabbitmq_password.result}@rabbitmq.${var.app_namespace}.svc.cluster.local:5672"
+    in_cluster_redis_url         = "redis.${var.app_namespace}.svc.cluster.local"
 
     # AWS DynamoDB connection info
     aws_dynamodb_endpoint = "https://dynamodb.${var.aws_region}.amazonaws.com"
 
     # In-cluster DynamoDB Local connection info
+    in_cluster_dynamodb_host     = "dynamodb.${var.app_namespace}.svc.cluster.local"
     in_cluster_dynamodb_endpoint = "http://dynamodb.${var.app_namespace}.svc.cluster.local:8000"
   }
 
@@ -1088,123 +623,15 @@ resource "aws_iam_role" "aws_load_balancer_controller" {
 }
 
 resource "aws_iam_policy" "aws_load_balancer_controller" {
-  name = "${local.app_name}-AWSLoadBalancerControllerIAMPolicy"
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect = "Allow"
-        Action = [
-          "iam:CreateServiceLinkedRole"
-        ]
-        Resource = "*"
-        Condition = {
-          StringEquals = {
-            "iam:AWSServiceName" = "elasticloadbalancing.amazonaws.com"
-          }
-        }
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "ec2:DescribeAccountAttributes",
-          "ec2:DescribeAddresses",
-          "ec2:DescribeAvailabilityZones",
-          "ec2:DescribeInternetGateways",
-          "ec2:DescribeVpcs",
-          "ec2:DescribeVpcPeeringConnections",
-          "ec2:DescribeSubnets",
-          "ec2:DescribeSecurityGroups",
-          "ec2:DescribeInstances",
-          "ec2:DescribeNetworkInterfaces",
-          "ec2:DescribeTags",
-          "ec2:GetCoipPoolUsage",
-          "ec2:GetSecurityGroupsForVpc"
-        ]
-        Resource = "*"
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "elasticloadbalancing:DescribeLoadBalancers",
-          "elasticloadbalancing:DescribeLoadBalancerAttributes",
-          "elasticloadbalancing:DescribeListeners",
-          "elasticloadbalancing:DescribeListenerCertificates",
-          "elasticloadbalancing:DescribeSSLPolicies",
-          "elasticloadbalancing:DescribeRules",
-          "elasticloadbalancing:DescribeTargetGroups",
-          "elasticloadbalancing:DescribeTargetGroupAttributes",
-          "elasticloadbalancing:DescribeTargetHealth",
-          "elasticloadbalancing:DescribeTags"
-        ]
-        Resource = "*"
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "elasticloadbalancing:CreateLoadBalancer",
-          "elasticloadbalancing:CreateTargetGroup"
-        ]
-        Resource = "*"
-        Condition = {
-          StringEquals = {
-            "elasticloadbalancing:CreateAction" = [
-              "CreateTargetGroup",
-              "CreateLoadBalancer"
-            ]
-          }
-        }
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "elasticloadbalancing:CreateListener",
-          "elasticloadbalancing:DeleteListener",
-          "elasticloadbalancing:CreateRule",
-          "elasticloadbalancing:DeleteRule"
-        ]
-        Resource = "*"
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "elasticloadbalancing:AddTags",
-          "elasticloadbalancing:RemoveTags"
-        ]
-        Resource = [
-          "arn:aws:elasticloadbalancing:*:*:targetgroup/*/*",
-          "arn:aws:elasticloadbalancing:*:*:loadbalancer/net/*/*",
-          "arn:aws:elasticloadbalancing:*:*:loadbalancer/app/*/*"
-        ]
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "elasticloadbalancing:RegisterTargets",
-          "elasticloadbalancing:DeregisterTargets"
-        ]
-        Resource = "arn:aws:elasticloadbalancing:*:*:targetgroup/*/*"
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "elasticloadbalancing:SetWebAcl",
-          "elasticloadbalancing:ModifyListener",
-          "elasticloadbalancing:AddListenerCertificates",
-          "elasticloadbalancing:RemoveListenerCertificates",
-          "elasticloadbalancing:ModifyRule"
-        ]
-        Resource = "*"
-      }
-    ]
-  })
+  name   = "${local.app_name}-AWSLoadBalancerControllerIAMPolicy"
+  policy = file("${path.module}/aws-lb-policy.json")
 }
 
 resource "aws_iam_role_policy_attachment" "aws_load_balancer_controller_attach" {
   role       = aws_iam_role.aws_load_balancer_controller.name
   policy_arn = aws_iam_policy.aws_load_balancer_controller.arn
 }
+
 
 # AWS Load Balancer Controller Service Account
 resource "kubernetes_service_account" "aws_load_balancer_controller" {
@@ -1339,6 +766,138 @@ resource "aws_eks_access_policy_association" "admin_attachment" {
   depends_on = [aws_eks_access_entry.admin_access]
 }
 
+# IAM Policy for DynamoDB Access from EKS Service Accounts
+resource "aws_iam_policy" "dynamodb_access" {
+  name        = "${local.app_name}-DynamoDBAccessPolicy"
+  description = "IAM policy for DynamoDB access from EKS service accounts"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "dynamodb:GetItem",
+          "dynamodb:PutItem",
+          "dynamodb:Query",
+          "dynamodb:Scan",
+          "dynamodb:UpdateItem",
+          "dynamodb:DeleteItem",
+          "dynamodb:BatchGetItem",
+          "dynamodb:BatchWriteItem",
+          "dynamodb:ConditionCheckItem"
+        ]
+        Resource = [
+          aws_dynamodb_table.main.arn,
+          "${aws_dynamodb_table.main.arn}/index/*"
+        ]
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "dynamodb:DescribeTable",
+          "dynamodb:DescribeTimeToLive",
+          "dynamodb:ListTagsOfResource"
+        ]
+        Resource = aws_dynamodb_table.main.arn
+      }
+    ]
+  })
+
+  tags = {
+    Name = "${local.app_name}-dynamodb-access-policy"
+  }
+}
+
+# EBS CSI Driver IAM Role for Service Accounts
+data "aws_iam_policy_document" "ebs_csi_assume_role_policy" {
+  statement {
+    actions = ["sts:AssumeRoleWithWebIdentity"]
+    effect  = "Allow"
+
+    condition {
+      test     = "StringEquals"
+      variable = "${replace(aws_eks_cluster.main.identity[0].oidc[0].issuer, "https://", "")}:sub"
+      values   = ["system:serviceaccount:kube-system:ebs-csi-controller-sa"]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "${replace(aws_eks_cluster.main.identity[0].oidc[0].issuer, "https://", "")}:aud"
+      values   = ["sts.amazonaws.com"]
+    }
+
+    principals {
+      identifiers = [aws_iam_openid_connect_provider.eks.arn]
+      type        = "Federated"
+    }
+  }
+
+  depends_on = [
+    aws_iam_openid_connect_provider.eks
+  ]
+}
+
+resource "aws_iam_role" "ebs_csi_driver" {
+  assume_role_policy = data.aws_iam_policy_document.ebs_csi_assume_role_policy.json
+  name               = "${local.app_name}-ebs-csi-driver-role"
+  depends_on = [
+    aws_iam_openid_connect_provider.eks
+  ]
+
+  tags = {
+    Name = "${local.app_name}-ebs-csi-driver-role"
+  }
+}
+
+resource "aws_iam_role_policy_attachment" "ebs_csi_driver_attach" {
+  role       = aws_iam_role.ebs_csi_driver.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy"
+}
+
+# EBS CSI Driver EKS Add-on
+resource "aws_eks_addon" "ebs_csi_driver" {
+  cluster_name                = aws_eks_cluster.main.name
+  addon_name                  = "aws-ebs-csi-driver"
+  addon_version               = "v1.35.0-eksbuild.1"
+  service_account_role_arn    = aws_iam_role.ebs_csi_driver.arn
+  resolve_conflicts_on_update = "PRESERVE"
+  resolve_conflicts_on_create = "OVERWRITE"
+
+  depends_on = [
+    aws_eks_node_group.main,
+    aws_iam_role_policy_attachment.ebs_csi_driver_attach
+  ]
+
+  tags = {
+    Name = "${local.app_name}-ebs-csi-driver"
+  }
+}
+
+# Default StorageClass for EBS volumes
+resource "kubernetes_storage_class" "gp3_default" {
+  metadata {
+    name = "gp3-default"
+    annotations = {
+      "storageclass.kubernetes.io/is-default-class" = "true"
+    }
+  }
+
+  storage_provisioner    = "ebs.csi.aws.com"
+  volume_binding_mode    = "WaitForFirstConsumer"
+  allow_volume_expansion = true
+  reclaim_policy         = "Delete"
+
+  parameters = {
+    type   = "gp3"
+    fsType = "ext4"
+  }
+
+  depends_on = [
+    aws_eks_addon.ebs_csi_driver
+  ]
+}
+
 # Outputs
 output "vpc_id" {
   description = "VPC ID"
@@ -1438,4 +997,167 @@ output "rds_mysql_connection_string" {
 output "kubectl_config_command" {
   description = "Command to configure kubectl"
   value       = "aws eks update-kubeconfig --region eu-west-1 --name ${aws_eks_cluster.main.name}"
+}
+
+# Storage Config Map outputs - AWS Services
+output "aws_postgres_port" {
+  description = "AWS RDS PostgreSQL port"
+  value       = "5432"
+}
+
+output "aws_postgres_host" {
+  description = "AWS RDS PostgreSQL host"
+  value       = aws_db_instance.postgres.address
+}
+
+output "aws_postgres_database" {
+  description = "AWS RDS PostgreSQL database name"
+  value       = aws_db_instance.postgres.db_name
+}
+
+output "aws_postgres_username" {
+  description = "AWS RDS PostgreSQL username"
+  value       = aws_db_instance.postgres.username
+}
+
+output "aws_mysql_port" {
+  description = "AWS RDS MySQL port"
+  value       = "3306"
+}
+
+output "aws_mysql_host" {
+  description = "AWS RDS MySQL host"
+  value       = aws_db_instance.mysql.address
+}
+
+output "aws_mysql_database" {
+  description = "AWS RDS MySQL database name"
+  value       = aws_db_instance.mysql.db_name
+}
+
+output "aws_mysql_username" {
+  description = "AWS RDS MySQL username"
+  value       = aws_db_instance.mysql.username
+}
+
+output "aws_redis_host" {
+  description = "AWS ElastiCache Redis host"
+  value       = aws_elasticache_cluster.redis.cache_nodes[0].address
+}
+
+output "aws_redis_port" {
+  description = "AWS ElastiCache Redis port"
+  value       = tostring(aws_elasticache_cluster.redis.cache_nodes[0].port)
+}
+
+output "aws_dynamodb_region" {
+  description = "AWS DynamoDB region"
+  value       = var.aws_region
+}
+
+output "aws_dynamodb_table_name_config" {
+  description = "AWS DynamoDB table name from ConfigMap"
+  value       = aws_dynamodb_table.main.name
+}
+
+# Storage Config Map outputs - In-Cluster Services
+output "in_cluster_postgres_port" {
+  description = "In-cluster PostgreSQL port"
+  value       = "5432"
+}
+
+output "in_cluster_postgres_database" {
+  description = "In-cluster PostgreSQL database name"
+  value       = local.rds_db_name
+}
+
+output "in_cluster_postgres_username" {
+  description = "In-cluster PostgreSQL username"
+  value       = local.rds_db_user
+}
+
+output "in_cluster_postgres_host" {
+  description = "In-cluster PostgreSQL host"
+  value       = "postgres.${var.app_namespace}.svc.cluster.local"
+}
+
+output "in_cluster_postgres_endpoint" {
+  description = "In-cluster PostgreSQL endpoint"
+  value       = "postgres.${var.app_namespace}.svc.cluster.local:5432"
+}
+
+output "in_cluster_mysql_port" {
+  description = "In-cluster MySQL port"
+  value       = "3306"
+}
+
+output "in_cluster_mysql_database" {
+  description = "In-cluster MySQL database name"
+  value       = local.rds_db_name
+}
+
+output "in_cluster_mysql_username" {
+  description = "In-cluster MySQL username"
+  value       = local.rds_db_user
+}
+
+output "in_cluster_mysql_host" {
+  description = "In-cluster MySQL host"
+  value       = "mysql.${var.app_namespace}.svc.cluster.local"
+}
+
+output "in_cluster_mysql_endpoint" {
+  description = "In-cluster MySQL endpoint"
+  value       = "mysql.${var.app_namespace}.svc.cluster.local:3306"
+}
+
+output "in_cluster_redis_port" {
+  description = "In-cluster Redis port"
+  value       = "6379"
+}
+
+output "in_cluster_redis_host" {
+  description = "In-cluster Redis host"
+  value       = "redis.${var.app_namespace}.svc.cluster.local"
+}
+
+output "in_cluster_dynamodb_port" {
+  description = "In-cluster DynamoDB Local port"
+  value       = "8000"
+}
+
+output "in_cluster_rabbitmq_port" {
+  description = "In-cluster RabbitMQ AMQP port"
+  value       = "5672"
+}
+
+output "in_cluster_rabbitmq_management_port" {
+  description = "In-cluster RabbitMQ management port"
+  value       = "15672"
+}
+
+output "in_cluster_rabbitmq_username" {
+  description = "In-cluster RabbitMQ username"
+  value       = local.rabbitmq_user
+}
+
+output "in_cluster_rabbitmq_host" {
+  description = "In-cluster RabbitMQ host"
+  value       = "rabbitmq.${var.app_namespace}.svc.cluster.local"
+}
+
+output "in_cluster_rabbitmq_endpoint" {
+  description = "In-cluster RabbitMQ endpoint"
+  value       = "rabbitmq.${var.app_namespace}.svc.cluster.local:5672"
+}
+
+# EBS CSI Driver outputs
+output "ebs_csi_driver_role_arn" {
+  description = "EBS CSI driver IAM role ARN"
+  value       = aws_iam_role.ebs_csi_driver.arn
+}
+
+output "default_storage_class_name" {
+  description = "Default StorageClass name for persistent volumes"
+  value       = kubernetes_storage_class.gp3_default.metadata[0].name
 }
