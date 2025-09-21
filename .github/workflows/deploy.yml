@@ -35,7 +35,7 @@ jobs:
           kubectl create secret generic dynamo-access-config \
             --from-literal=access_key_id=${{ secrets.DYNAMO_AWS_ACCESS_KEY_ID }} \
             --from-literal=access_secret_key=${{ secrets.DYNAMO_AWS_SECRET_ACCESS_KEY }} \
-            --namespace=${{ secrets.KUBE_APP_NAMESPACE }}
+            --namespace=${{ secrets.KUBE_APP_NAMESPACE }} \
             --dry-run=client -o yaml | kubectl apply -f -
       - name: Deploy Kubernetes manifests
         run: |
