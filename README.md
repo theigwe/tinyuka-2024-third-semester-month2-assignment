@@ -1,9 +1,9 @@
 # Tinyuka EKS Infrastructure
 
 ## Cluster Overview
-> **Name**: tinyuka-cluster
-> **Region**: eu-west-1
-> **Host Location**: https://tinyuka-mart.
+> **Name**: tinyuka-cluster  
+> **Region**: eu-west-1  
+> **Host Location**: [tinyuka-mart.run.place](tinyuka-mart.run.place)
 
 A comprehensive, production-ready AWS EKS infrastructure with both AWS managed services and in-cluster alternatives, built with Terraform and automated via GitHub Actions.
 
