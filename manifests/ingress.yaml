@@ -12,14 +12,14 @@ metadata:
         "Port": "443",
         "StatusCode": "HTTP_301"
       }}
-    alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:eu-west-1:396768595839:certificate/4a27bba5-f791-42a3-a555-08d9598c97a2
+    alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:eu-west-1:396768595839:certificate/1deebaa6-ecbf-4703-b494-ce98e54edfc2
     alb.ingress.kubernetes.io/target-type: ip
     alb.ingress.kubernetes.io/healthcheck-path: /actuator/health
     alb.ingress.kubernetes.io/healthcheck-port: traffic-port
 spec:
   ingressClassName: alb
   rules:
-    - host: tinyuka-mart.run.place
+    - host: store.tinyuka-mart.run.place
       http:
         paths:
           - path: /
